@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -40,8 +41,8 @@ def layer_coordinates(
 def open_images(viewer: Viewer, path: str) -> list[Image]:
     """Delegate file decoding entirely to the installed npe2 reader plugins.
 
-    OME-Zarr paths should identify a single image group. Split channel layers
-    retain their reader order; the UI exposes the source batch channel explicitly.
+    OME-Zarr image groups and Bio-Formats containers retain reader ordering.
+    Split channel layers record their image-group URI and source channel.
     """
     plugin = "napari-tiff" if path.lower().endswith((".tif", ".tiff")) else "napari-ome-zarr"
     images = [layer for layer in viewer.open(path, plugin=plugin) if isinstance(layer, Image)]
@@ -51,32 +52,58 @@ def open_images(viewer: Viewer, path: str) -> list[Image]:
 
 def prepare_image_layers(images: list[Image], path: str) -> None:
     """Retain reader channel order and stored transforms for native or dock opening."""
-    transform = None
+    prepared: list[tuple[str, list[Image], Affine | None]] = [(path, images, None)]
     if images and images[0].source.reader_plugin == "napari-ome-zarr":
+        from napari_ome_zarr.ome_zarr_reader import Bioformats2raw
+        from napari_ome_zarr.utils import count_layers_in_image
         from ome_zarr import OMEZarrMultiscale
+        from zarr import open_group
 
         # The reader currently omits ordinary image-group translations. Use its
-        # upstream metadata models and napari's affine composition to retain the
-        # entire stored transform, without implementing another metadata parser.
-        multiscale = OMEZarrMultiscale.from_ome_zarr(path)
-        axes = multiscale.images[0].axes
-        transform = Affine(ndim=len(axes))
-        metadata = multiscale.metadata
-        for stored in (
-            *metadata.datasets[0].coordinateTransformations,
-            *(metadata.coordinateTransformations or ()),
-        ):
-            matrix = np.asarray(stored.as_affine().affine_matrix)
-            transform = Affine(linear_matrix=matrix[:, :-1], translate=matrix[:, -1]).compose(
-                transform
+        # container traversal, channel counts and metadata models to associate
+        # each layer with its own image, without implementing another parser.
+        root = open_group(path, mode="r")
+        groups = (
+            [child.group for child in Bioformats2raw(root).children()]
+            if Bioformats2raw.matches(root)
+            else [root]
+        )
+        prepared = []
+        offset = 0
+        for group in groups:
+            if offset >= len(images):
+                break
+            multiscale = OMEZarrMultiscale.from_ome_zarr(group)
+            axes = multiscale.images[0].axes
+            transform = Affine(ndim=len(axes))
+            metadata = multiscale.metadata
+            for stored in (
+                *metadata.datasets[0].coordinateTransformations,
+                *(metadata.coordinateTransformations or ()),
+            ):
+                matrix = np.asarray(stored.as_affine().affine_matrix)
+                transform = Affine(linear_matrix=matrix[:, :-1], translate=matrix[:, -1]).compose(
+                    transform
+                )
+            transform = transform.set_slice([i for i, axis in enumerate(axes) if axis != "c"])
+            count = count_layers_in_image(multiscale)["image_layers"]
+            image_uri = (
+                f"{path.rstrip('/')}/{group.path}"
+                if "://" in path
+                else str(Path(path) / group.path)
             )
-        transform = transform.set_slice([i for i, axis in enumerate(axes) if axis != "c"])
-    for channel, layer in enumerate(images):
-        if transform is not None:
-            layer.scale = np.ones(layer.ndim)
-            layer.translate = np.zeros(layer.ndim)
-            layer.affine = transform
-        layer.metadata["napari_localize_psf"] = {"input_uri": path, "source_channel": channel}
+            prepared.append((image_uri, images[offset : offset + count], transform))
+            offset += count
+    for image_uri, layers, transform in prepared:
+        for channel, layer in enumerate(layers):
+            if transform is not None:
+                layer.scale = np.ones(layer.ndim)
+                layer.translate = np.zeros(layer.ndim)
+                layer.affine = transform
+            layer.metadata["napari_localize_psf"] = {
+                "input_uri": image_uri,
+                "source_channel": channel,
+            }
 
 
 def layer_calibration(

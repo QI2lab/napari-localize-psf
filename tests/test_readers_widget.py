@@ -51,7 +51,8 @@ def test_tiff_reader_and_widget_configuration(viewer, qtbot, tmp_path):
     assert widget.batch_button.text() == "Copy batch command"
 
 
-def test_ome_zarr_reader_multichannel_calibration(viewer, qtbot, tmp_path):
+@pytest.mark.parametrize("group", ["0", ""])
+def test_ome_zarr_reader_multichannel_calibration(viewer, qtbot, tmp_path, group):
     from yaozarrs import DimSpec, v05
     from yaozarrs.write.v05 import write_bioformats2raw
 
@@ -61,28 +62,43 @@ def test_ome_zarr_reader_multichannel_calibration(viewer, qtbot, tmp_path):
         DimSpec(name=name, size=size, scale=scale, unit="micrometer")
         for name, size, scale in zip("zyx", data.shape[1:], (0.2, 0.1, 0.1), strict=True)
     ]
-    multiscale = v05.Multiscale.from_dims(dims)
-    multiscale.datasets[0].coordinateTransformations.append(
-        v05.TranslationTransformation(translation=[0, -2, 3, -4])
-    )
-    write_bioformats2raw(
-        path, {"0": (v05.Image(multiscales=[multiscale]), [data])}, writer="tensorstore"
-    )
-    layers = open_images(viewer, str(path / "0"))
-    assert len(layers) == 2
-    assert layers[1].source.reader_plugin == "napari-ome-zarr"
-    spacing, origin = layer_calibration(layers[1], "zyx")
+    positions = {"0": (-2, 3, -4), "1": (5, -6, 7)}
+    images = {}
+    ome_xml = tifffile.OmeXml()
+    for name, translation in positions.items():
+        multiscale = v05.Multiscale.from_dims(dims)
+        multiscale.datasets[0].coordinateTransformations.append(
+            v05.TranslationTransformation(translation=[0, *translation])
+        )
+        images[name] = (v05.Image(multiscales=[multiscale]), [data])
+        ome_xml.addimage(
+            dtype=data.dtype,
+            shape=data.shape,
+            storedshape=(14, 1, 1, 19, 21, 1),
+            axes="CZYX",
+        )
+    write_bioformats2raw(path, images, ome_xml=str(ome_xml), writer="tensorstore")
+    opened = str(path / group)
+    selected_group = group or "1"
+    layers = open_images(viewer, opened)
+    assert len(layers) == (2 if group else 4)
+    assert layers[-1].source.reader_plugin == "napari-ome-zarr"
+    spacing, origin = layer_calibration(layers[-1], "zyx")
     np.testing.assert_allclose(spacing, (0.2, 0.1, 0.1))
-    np.testing.assert_allclose(origin, (-2, 3, -4))
-    assert layers[1].metadata["napari_localize_psf"]["source_channel"] == 1
+    np.testing.assert_allclose(origin, positions[selected_group])
+    assert layers[-1].metadata["napari_localize_psf"] == {
+        "input_uri": str(path / selected_group),
+        "source_channel": 1,
+    }
     # The same metadata adapter must also cover images opened through File > Open.
     viewer.layers.clear()
-    native = viewer.open(str(path / "0"), plugin="napari-ome-zarr")
+    native = viewer.open(opened, plugin="napari-ome-zarr")
     widget = LocalizationWidget(viewer)
     qtbot.addWidget(widget)
-    widget.layers.setCurrentIndex(widget.layers.findData(native[1]))
+    widget.layers.setCurrentIndex(widget.layers.findData(native[-1]))
     config = widget.current_config()
-    np.testing.assert_allclose(config.origin_zyx_um, (-2, 3, -4))
+    np.testing.assert_allclose(config.origin_zyx_um, positions[selected_group])
+    assert config.input_uri == str(path / selected_group)
     assert config.channel == 1
 
 

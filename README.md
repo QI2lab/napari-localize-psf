@@ -22,7 +22,7 @@ example dependencies into that environment.
 
 Open **Plugins → QI2lab Localization**.
 
-1. Open an OME-TIFF or OME-Zarr image group, or select an existing image layer.
+1. Open an OME-TIFF or OME-Zarr dataset, or select an existing image layer.
 2. Confirm the axes, physical calibration, and preview region. Choose a 2D plane
    or 3D volume.
 3. Preview U-FISH priors and adjust `blend_3d` and the intensity threshold.

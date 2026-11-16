@@ -365,7 +365,7 @@ class LocalizationWidget(QWidget):
             try:
                 prepare_image_layers(siblings, layer.source.path)
             except Exception as error:
-                self._source_error = f"Open an individual OME image group: {error}"
+                self._source_error = f"Could not read OME image calibration: {error}"
         labels = "".join(str(a).lower() for a in layer.axis_labels)
         self.axes.setText(
             labels
