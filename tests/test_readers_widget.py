@@ -15,7 +15,7 @@ pytestmark = pytest.mark.integration
 
 def test_tiff_reader_and_widget_configuration(viewer, qtbot, tmp_path):
     path = tmp_path / "counts.ome.tif"
-    image = np.ones((7, 19, 21), dtype=np.uint16)
+    image = np.ones((45, 137, 139), dtype=np.uint16)
     tifffile.imwrite(
         path,
         image,
@@ -41,6 +41,7 @@ def test_tiff_reader_and_widget_configuration(viewer, qtbot, tmp_path):
     widget.blend.setChecked(False)
     config = widget.current_config()
     assert config.input_uri == str(path)
+    assert config.preview.crop_zyx_px == (0, 45, 0, 137, 0, 139)
     assert config.intensity_threshold == 0.6 and not config.blend_3d
     exported = tmp_path / "localization.json"
     config.save(exported)

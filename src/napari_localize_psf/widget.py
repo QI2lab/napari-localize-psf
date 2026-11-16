@@ -155,7 +155,7 @@ class LocalizationWidget(QWidget):
             for column, value in enumerate(
                 (
                     0,
-                    (41, 128, 128)[axis],
+                    1,
                     defaults.voxel_size_zyx_um[axis],
                     0,
                     defaults.fit_roi_size_um[axis],
@@ -406,7 +406,7 @@ class LocalizationWidget(QWidget):
         for i, axis in enumerate("zyx"):
             size = shape[axes.index(axis)] if axis in axes else 1
             self.geometry.item(i, 0).setText("0")
-            self.geometry.item(i, 1).setText(str(min(size, (41, 128, 128)[i])))
+            self.geometry.item(i, 1).setText(str(size))
         try:
             spacing, origin = layer_calibration(layer, axes)
         except Exception as error:
