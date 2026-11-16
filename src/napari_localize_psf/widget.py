@@ -189,12 +189,14 @@ class LocalizationWidget(QWidget):
         self.threshold.setValue(0.2)
         self.threshold.valueChanged.connect(self._invalidate_detection)
         form.addRow("Intensity threshold", self.threshold)
-        self.collapse_priors = QCheckBox("Collapse priors within 2 × optical PSF FWHM")
+        self.collapse_priors = QCheckBox("Collapse nearby priors and fits (2 × PSF FWHM)")
         self.collapse_priors.setChecked(defaults.collapse_close_priors)
         self.collapse_priors.setToolTip(
             "Keep the strongest U-FISH enhancement peak when separations are within twice "
             "the nominal Gaussian FWHM along every spatial axis, using NA, wavelength, "
-            "refractive index and voxel calibration. Applies to preview, fitting, and batch."
+            "refractive index and voxel calibration. Final fitted centers are also collapsed, "
+            "preferring converged fits, valid covariance, then amplitude. Applies to preview "
+            "and batch exports."
         )
         self.collapse_priors.toggled.connect(self._prior_policy_changed)
         form.addRow(self.collapse_priors)
@@ -565,6 +567,7 @@ class LocalizationWidget(QWidget):
                 features["success"].to_numpy(),
                 features["covariance_valid"].to_numpy() if "covariance_valid" in features else None,
                 filters,
+                collapse_distance_zyx_um=layer.metadata.get("collapse_distance_zyx_um"),
             )
             layer.shown = mask
             layer.features = features.assign(filter_pass=mask)
@@ -806,6 +809,10 @@ class LocalizationWidget(QWidget):
                 features,
                 config,
             )
+            self._fit_layer.metadata = {
+                **self._fit_layer.metadata,
+                "collapse_distance_zyx_um": result.get("collapse_distance_zyx_um"),
+            }
             self._apply_fit_filters()
             self.status.setText(
                 f"Converged {int(np.sum(result['success']))} / {len(parameters)} fits; {int(np.sum(features['active_bound']))} with active bounds. Parameters are in the points features table."

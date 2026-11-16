@@ -7,7 +7,8 @@ from qtpy.QtCore import Qt
 from simulator import gaussian_image
 
 from napari_localize_psf.config import LocalizationConfig, PreviewSettings
-from napari_localize_psf.processing import optical_parameters
+from napari_localize_psf.data import prepare_preview
+from napari_localize_psf.processing import fit_filter_mask, fit_spots, optical_parameters
 
 pytestmark = [pytest.mark.integration, pytest.mark.gpu]
 
@@ -111,6 +112,10 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geome
     assert fitted.metadata["configuration"]["edge_margin_px"] == 3
     assert fitted.features["success"].any()
     assert "covariance_valid" in fitted.features
+    assert (
+        fitted.metadata["collapse_distance_zyx_um"]
+        == optical_parameters(widget.current_config())["collapse_distance_zyx_um"]
+    )
     nearest = np.asarray(fitted.features[["cz", "cy", "cx"]])
     assert np.min(np.linalg.norm(nearest - truth[[3, 2, 1]], axis=1)) < 0.05
     assert fitted.metadata["configuration"]["fit_model"] == config.fit_model
@@ -123,19 +128,25 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geome
     widget.amplitude_min.setText(repr(float(minimum)))
     widget.amplitude_max.setText(repr(float(maximum)))
     widget.amplitude_max.editingFinished.emit()
-    in_range = (amplitude >= minimum) & (amplitude <= maximum)
-    np.testing.assert_array_equal(fitted.shown, in_range)
+    expected = fit_filter_mask(
+        fitted.features[list(widget.parameter_names)].to_numpy(),
+        fitted.features["success"].to_numpy(),
+        fitted.features["covariance_valid"].to_numpy(),
+        widget.current_config().fit_filters,
+        collapse_distance_zyx_um=fitted.metadata["collapse_distance_zyx_um"],
+    )
+    np.testing.assert_array_equal(fitted.shown, expected)
     for convergence in ("Pass", "Fail", "All"):
         widget.fit_convergence.setCurrentText(convergence)
         for covariance in ("Pass", "Fail", "All"):
             widget.fit_covariance.setCurrentText(covariance)
-            expected = in_range.copy()
-            if convergence != "All":
-                expected &= np.asarray(fitted.features["success"]) == (convergence == "Pass")
-            if covariance != "All":
-                expected &= np.asarray(fitted.features["covariance_valid"]) == (
-                    covariance == "Pass"
-                )
+            expected = fit_filter_mask(
+                fitted.features[list(widget.parameter_names)].to_numpy(),
+                fitted.features["success"].to_numpy(),
+                fitted.features["covariance_valid"].to_numpy(),
+                widget.current_config().fit_filters,
+                collapse_distance_zyx_um=fitted.metadata["collapse_distance_zyx_um"],
+            )
             np.testing.assert_array_equal(fitted.shown, expected)
             np.testing.assert_array_equal(fitted.features["filter_pass"], expected)
             assert (
@@ -146,7 +157,16 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geome
             assert viewer.layers["Gaussian fits"] == fitted
     np.testing.assert_array_equal(fitted.data, coordinates)
     widget._reset_fit_filters()
-    assert fitted.shown.all()
+    np.testing.assert_array_equal(
+        fitted.shown,
+        fit_filter_mask(
+            fitted.features[list(widget.parameter_names)].to_numpy(),
+            fitted.features["success"].to_numpy(),
+            fitted.features["covariance_valid"].to_numpy(),
+            widget.current_config().fit_filters,
+            collapse_distance_zyx_um=fitted.metadata["collapse_distance_zyx_um"],
+        ),
+    )
     widget.covariance.setChecked(False)
     widget.run_fitting()
     qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
@@ -161,7 +181,51 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geome
     widget.fit_covariance.setCurrentText("Fail")
     assert not without_covariance.shown.any()
     widget._reset_fit_filters()
-    assert without_covariance.shown.all()
+    np.testing.assert_array_equal(
+        without_covariance.shown,
+        fit_filter_mask(
+            without_covariance.features[list(widget.parameter_names)].to_numpy(),
+            without_covariance.features["success"].to_numpy(),
+            None,
+            widget.current_config().fit_filters,
+            collapse_distance_zyx_um=without_covariance.metadata["collapse_distance_zyx_um"],
+        ),
+    )
+
+
+def test_real_fit_worker_publishes_one_fit_for_converging_candidates(viewer, qtbot):
+    from napari_localize_psf.widget import LocalizationWidget
+
+    image, truth, spacing, origin = gaussian_image()
+    source = viewer.add_image(image, scale=spacing, translate=origin, units="um")
+    widget = LocalizationWidget(viewer)
+    qtbot.addWidget(widget)
+    config = widget.current_config().model_copy(
+        update={"fit_roi_size_um": (1.8, 1.2, 1.2), "roi_batch_size": 1}
+    )
+    widget.apply_config(config)
+    preview = prepare_preview(source, config)
+    # Simulated input coordinates exercise the real fitter and production Qt
+    # worker/publication path without replacing detection or fitting backends.
+    center = (truth[[3, 2, 1]] - origin) / spacing
+    priors = np.repeat(center[None], 2, axis=0)
+    priors[:, 2] += [-2.5, 2.5]
+
+    def compute():
+        return preview, fit_spots(preview[0], priors, config, origin_zyx_um=preview[1]), config
+
+    widget._start(compute, "GPUfit")
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    fitted = viewer.layers["Gaussian fits"]
+    assert len(fitted.data) == 2
+    assert fitted.shown.sum() == 1
+    assert fitted.features["filter_pass"].sum() == 1
+    assert widget.fit_filter_status.text() == "Showing 1 / 2 fits."
+    widget.amplitude_max.setText(str(float(fitted.features["amp"].min())))
+    widget.amplitude_max.editingFinished.emit()
+    assert fitted.shown.sum() == 1
+    widget._reset_fit_filters()
+    assert fitted.shown.sum() == 1
 
 
 def test_fit_filters_handle_an_empty_production_preview(viewer, qtbot):
