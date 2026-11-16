@@ -32,9 +32,9 @@ Open **Plugins → QI2lab Localization**.
 5. Save the JSON settings. Choose an output directory and select **Copy batch
    command** to copy a command for your terminal.
 
-The plugin saves a runnable `.sh` or `.ps1` file beside the current JSON. Both
-preview and batch execution call the shared localize-psf workflow. An example
-configuration is available in [localization.json](examples/localization.json).
+Export writes only the JSON settings. Preview and batch execution call the
+shared localize-psf workflow. An example configuration is available in
+[localization.json](examples/localization.json).
 
 ## Contributing
 

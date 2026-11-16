@@ -157,6 +157,7 @@ def test_copy_command_quotes_paths_and_saves_current_settings(
             str(output),
         ]
     assert LocalizationConfig.load(config_path).intensity_threshold == 0.65
+    assert set(tmp_path.iterdir()) == {image_path, config_path}
     assert not output.exists()
     assert not widget._busy
     assert widget.tabs.isEnabled()
