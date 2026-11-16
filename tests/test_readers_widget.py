@@ -47,7 +47,7 @@ def test_tiff_reader_and_widget_configuration(viewer, qtbot, tmp_path):
     assert widget.current_config().model_dump(exclude={"provenance"}) == config.model_dump(
         exclude={"provenance"}
     )
-    assert prepare_preview(layers[0], config).image.shape == image.shape
+    assert prepare_preview(layers[0], config)[0].shape == image.shape
     assert widget.batch_button.text() == "Copy batch command"
 
 

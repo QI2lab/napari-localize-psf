@@ -6,7 +6,7 @@ import pytest
 from napari.layers import Image
 
 from napari_localize_psf.config import LocalizationConfig, PreviewSettings
-from napari_localize_psf.data import layer_calibration, prepare_preview
+from napari_localize_psf.data import layer_calibration, layer_coordinates, prepare_preview
 
 pytestmark = pytest.mark.unit
 
@@ -26,10 +26,10 @@ def test_nanometer_calibration_and_permuted_cropped_coordinates():
     selection = PreviewSettings(axes="tyxz", timepoint=1, crop_zyx_px=(1, 6, 2, 8, 3, 10))
     config = LocalizationConfig(preview=selection, voxel_size_zyx_um=spacing, origin_zyx_um=origin)
     preview = prepare_preview(layer, config)
-    np.testing.assert_array_equal(preview.image, data[1, 2:8, 3:10, 1:6].transpose(2, 0, 1))
-    np.testing.assert_allclose(preview.origin, (-1.8, 3.2, -3.7))
+    np.testing.assert_array_equal(preview[0], data[1, 2:8, 3:10, 1:6].transpose(2, 0, 1))
+    np.testing.assert_allclose(preview[1], (-1.8, 3.2, -3.7))
     np.testing.assert_array_equal(
-        preview.layer_coordinates(np.array([[1, 2, 3.0]])), [[1, 4, 6, 2]]
+        layer_coordinates(np.array([[1, 2, 3.0]]), config), [[1, 4, 6, 2]]
     )
 
 
@@ -41,9 +41,9 @@ def test_lazy_multiscale_uses_highest_resolution_plane():
         preview=PreviewSettings(axes="zyx", z_plane=4, crop_zyx_px=(0, 9, 2, 12, 3, 15)),
     )
     preview = prepare_preview(layer, config)
-    assert preview.image.shape == (1, 10, 12)
-    np.testing.assert_array_equal(preview.image[0], array[4, 2:12, 3:15].compute())
-    np.testing.assert_array_equal(preview.layer_coordinates(np.array([[0, 1, 2.0]])), [[4, 3, 5]])
+    assert preview[0].shape == (1, 10, 12)
+    np.testing.assert_array_equal(preview[0][0], array[4, 2:12, 3:15].compute())
+    np.testing.assert_array_equal(layer_coordinates(np.array([[0, 1, 2.0]]), config), [[4, 3, 5]])
 
 
 def test_xy_input_and_poisson_validation():
@@ -51,7 +51,7 @@ def test_xy_input_and_poisson_validation():
     config = LocalizationConfig(
         fit_model="2d", preview=PreviewSettings(axes="yx", crop_zyx_px=(0, 1, 0, 11, 0, 13))
     )
-    assert prepare_preview(layer, config).image.shape == (1, 11, 13)
+    assert prepare_preview(layer, config)[0].shape == (1, 11, 13)
     layer.data[0, 0] = -1
     with pytest.raises(ValueError, match="nonnegative"):
         prepare_preview(layer, config)

@@ -42,8 +42,15 @@ from qtpy.QtWidgets import (
 )
 
 from .config import LocalizationConfig, Parameter, PreviewSettings
-from .data import Preview, layer_calibration, open_images, prepare_image_layers, prepare_preview
-from .processing import Detection, Detector, FitResults, fit_spots, optical_parameters
+from .data import (
+    Preview,
+    layer_calibration,
+    layer_coordinates,
+    open_images,
+    prepare_image_layers,
+    prepare_preview,
+)
+from .processing import Detector, FitResults, fit_spots, optical_parameters
 from .runtime import package_versions
 
 if TYPE_CHECKING:
@@ -51,7 +58,7 @@ if TYPE_CHECKING:
 
 type JobResult = (
     dict[str, tuple[float, float, float]]
-    | tuple[Preview, Detection]
+    | tuple[Preview, tuple[np.ndarray, np.ndarray]]
     | tuple[Preview, FitResults, LocalizationConfig]
 )
 
@@ -69,7 +76,7 @@ class LocalizationWidget(QWidget):
         self.viewer = napari_viewer
         self.detector = Detector()
         self._preview: Preview | None = None
-        self._detection: Detection | None = None
+        self._detection: tuple[np.ndarray, np.ndarray] | None = None
         self._layer: Image | None = None
         self._revision = 0
         self._job_revision = 0
@@ -538,9 +545,9 @@ class LocalizationWidget(QWidget):
         layer, preview = self._layer, self._preview
         assert layer is not None
 
-        def compute() -> tuple[Preview, Detection]:
+        def compute() -> tuple[Preview, tuple[np.ndarray, np.ndarray]]:
             selected = preview if preview is not None else prepare_preview(layer, config)
-            return selected, self.detector.detect(selected, config)
+            return selected, self.detector.detect(selected[0], config)
 
         self._start(compute, "U-FISH")
 
@@ -558,7 +565,12 @@ class LocalizationWidget(QWidget):
         def compute() -> tuple[Preview, FitResults, LocalizationConfig]:
             self.detector.release()
             result = fit_spots(
-                preview, detection.points, config, self._cancelled, self.progress.emit
+                preview[0],
+                detection[0],
+                config,
+                self._cancelled,
+                self.progress.emit,
+                origin_zyx_um=preview[1],
             )
             return preview, result, config
 
@@ -592,11 +604,13 @@ class LocalizationWidget(QWidget):
             for name in ("scale", "translate", "rotate", "shear", "affine", "axis_labels", "units")
         }
         if self._job_kind == "U-FISH":
-            preview, detection = cast(tuple[Preview, Detection], value)
+            preview, detection = cast(tuple[Preview, tuple[np.ndarray, np.ndarray]], value)
             self._preview, self._detection = preview, detection
+            points, enhancement = detection
+            source_config = preview[2]
             self._replace_points(
                 "U-FISH priors",
-                preview.layer_coordinates(detection.points),
+                layer_coordinates(points, source_config),
                 transforms,
                 pd.DataFrame(),
             )
@@ -604,10 +618,8 @@ class LocalizationWidget(QWidget):
             if enhanced_name in self.viewer.layers:
                 self.viewer.layers.remove(enhanced_name)
             # Enhancement is crop-local; express the crop origin in source pixels.
-            selection = preview.config.preview
-            enhanced = (
-                detection.enhanced if preview.config.fit_model == "3d" else detection.enhanced[None]
-            )
+            selection = source_config.preview
+            enhanced = enhancement if source_config.fit_model == "3d" else enhancement[None]
             full_shape = [
                 1 if a in "tc" else enhanced.shape["zyx".index(a)] for a in selection.axes
             ]
@@ -618,7 +630,7 @@ class LocalizationWidget(QWidget):
                 if "z" not in spatial
                 else data.transpose(tuple("zyx".index(a) for a in spatial))
             )
-            offset = preview.layer_coordinates(np.zeros((1, 3)))[0]
+            offset = layer_coordinates(np.zeros((1, 3)), source_config)[0]
             affine = layer.affine.affine_matrix.copy()
             # Compose the crop translation with the layer's public data/world map.
             crop_transform = Affine(translate=offset, ndim=layer.ndim)
@@ -642,13 +654,12 @@ class LocalizationWidget(QWidget):
                 opacity=0.4,
                 metadata={"localization_output": True},
             )
-            self.status.setText(
-                f"{len(detection.points)} U-FISH priors. Tune threshold or preview GPU fits."
-            )
+            self.status.setText(f"{len(points)} U-FISH priors. Tune threshold or preview GPU fits.")
         elif self._job_kind == "GPUfit":
             preview, result, config = cast(tuple[Preview, FitResults, LocalizationConfig], value)
             parameters = result["fit_params"]
-            points = (parameters[:, (3, 2, 1)] - preview.origin) / preview.spacing
+            _, origin, source_config = preview
+            points = (parameters[:, (3, 2, 1)] - origin) / source_config.voxel_size_zyx_um
             features = pd.DataFrame(parameters, columns=self.parameter_names)
             features["success"] = result["success"]
             features["iterations"] = result["niters"]
@@ -657,7 +668,11 @@ class LocalizationWidget(QWidget):
             if "covariance_valid" in result:
                 features["covariance_valid"] = result["covariance_valid"]
             self._replace_points(
-                "Gaussian fits", preview.layer_coordinates(points), transforms, features, config
+                "Gaussian fits",
+                layer_coordinates(points, source_config),
+                transforms,
+                features,
+                config,
             )
             self.status.setText(
                 f"Converged {int(np.sum(result['success']))} / {len(parameters)} fits; {int(np.sum(features['active_bound']))} with active bounds. Parameters are in the points features table."

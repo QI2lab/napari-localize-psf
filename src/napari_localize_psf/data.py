@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
-from localize_psf.processing import Volume, prepare_volume
+from localize_psf.processing import prepare_volume
 from napari.layers import Image
 from napari.utils.transforms import Affine
 from numpy.typing import NDArray
@@ -18,25 +17,24 @@ if TYPE_CHECKING:
     from napari import Viewer
 
 
-@dataclass(frozen=True)
-class Preview(Volume):
-    """One cropped ZYX volume; origin is the crop's physical first voxel in µm."""
+type Preview = tuple[np.ndarray, tuple[float, float, float], LocalizationConfig]
 
-    config: LocalizationConfig
 
-    def layer_coordinates(self, points_zyx_px: NDArray[np.floating]) -> NDArray[np.float64]:
-        """Map crop-local ZYX pixels back to the source layer's full axis order."""
-        selection = self.config.preview
-        offsets = np.asarray(selection.crop_zyx_px[::2], dtype=float)
-        if self.config.fit_model == "2d" and "z" in selection.axes:
-            offsets[0] = selection.z_plane
-        points = np.asarray(points_zyx_px, dtype=float) + offsets
-        columns = {
-            "t": np.full(len(points), selection.timepoint),
-            "c": np.full(len(points), selection.channel),
-            **dict(zip("zyx", points.T, strict=True)),
-        }
-        return np.column_stack([columns[axis] for axis in selection.axes])
+def layer_coordinates(
+    points_zyx_px: NDArray[np.floating], config: LocalizationConfig
+) -> NDArray[np.float64]:
+    """Map crop-local ZYX pixels back to the source layer's full axis order."""
+    selection = config.preview
+    offsets = np.asarray(selection.crop_zyx_px[::2], dtype=float)
+    if config.fit_model == "2d" and "z" in selection.axes:
+        offsets[0] = selection.z_plane
+    points = np.asarray(points_zyx_px, dtype=float) + offsets
+    columns = {
+        "t": np.full(len(points), selection.timepoint),
+        "c": np.full(len(points), selection.channel),
+        **dict(zip("zyx", points.T, strict=True)),
+    }
+    return np.column_stack([columns[axis] for axis in selection.axes])
 
 
 def open_images(viewer: Viewer, path: str) -> list[Image]:
@@ -119,6 +117,7 @@ def layer_calibration(
 def prepare_preview(layer: Image, config: LocalizationConfig) -> Preview:
     """Read only the selected highest-resolution crop and convert it to ZYX.
 
+    Return (image, crop origin in ZYX µm, captured configuration).
     Geometry in config is source geometry. Crop offsets are applied exactly once.
     2D means one XY plane, not a maximum-intensity projection.
     """
@@ -127,5 +126,5 @@ def prepare_preview(layer: Image, config: LocalizationConfig) -> Preview:
     data = layer.data[0] if layer.multiscale else layer.data
     if layer.rgb or len(settings.axes) != data.ndim:
         raise ValueError("Select a scalar image with an explicit, matching axis order")
-    volume = prepare_volume(data, config)
-    return Preview(volume.image, volume.spacing, volume.origin, config)
+    image, origin = prepare_volume(data, config)
+    return image, origin, config

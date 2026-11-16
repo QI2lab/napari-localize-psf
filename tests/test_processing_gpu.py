@@ -47,7 +47,7 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geome
     widget.run_detection()
     qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
     assert "U-FISH priors" in viewer.layers, widget.status.text()
-    assert widget._detection is not None and len(widget._detection.points) > 0
+    assert widget._detection is not None and len(widget._detection[0]) > 0
     enhanced = viewer.layers["U-FISH enhancement"]
     offset = np.array([3, 4] if geometry == "xy" else [1, 0 if plane else 3, 3, 4])
     np.testing.assert_allclose(
@@ -57,10 +57,10 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geome
     np.testing.assert_allclose(
         priors.data_to_world(priors.data[0]), source.data_to_world(priors.data[0])
     )
-    cached_enhancement = widget._detection.enhanced
+    cached_enhancement = widget._detection[1]
     widget.run_detection()
     qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
-    assert widget._detection.enhanced is cached_enhancement
+    assert widget._detection[1] is cached_enhancement
     assert viewer.layers["U-FISH priors"] is not priors
     assert viewer.layers["U-FISH enhancement"] is not enhanced
     widget.run_fitting()
