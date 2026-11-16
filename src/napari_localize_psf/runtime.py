@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-from importlib.metadata import distribution, version
+from importlib.metadata import PackageNotFoundError, distribution
 
 
 def package_versions() -> dict[str, str]:
-    """Record distribution versions and Git revisions without initializing CUDA."""
+    """Record installed distribution versions/revisions without importing backends."""
     result: dict[str, str] = {}
     for name in (
         "napari-localize-psf",
@@ -17,8 +17,12 @@ def package_versions() -> dict[str, str]:
         "torch",
         "cupy-cuda12x",
     ):
-        result[name] = version(name)
-        origin = distribution(name).read_text("direct_url.json")
+        try:
+            package = distribution(name)
+        except PackageNotFoundError:
+            continue
+        result[name] = package.version
+        origin = package.read_text("direct_url.json")
         if origin:
             revision = json.loads(origin).get("vcs_info", {}).get("commit_id")
             if revision:

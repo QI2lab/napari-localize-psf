@@ -1444,6 +1444,7 @@ test = [
     { name = "pytest-cov" },
     { name = "pytest-qt" },
     { name = "qtpy" },
+    { name = "yaozarrs", extra = ["io", "write-tensorstore"] },
 ]
 
 [package.metadata]
@@ -1469,6 +1470,7 @@ test = [
     { name = "pytest-cov", specifier = ">=7" },
     { name = "pytest-qt", specifier = ">=4.5" },
     { name = "qtpy", specifier = ">=2.4" },
+    { name = "yaozarrs", extras = ["io", "write-tensorstore"], git = "https://github.com/imaging-formats/yaozarrs.git?rev=main" },
 ]
 
 [[package]]

@@ -11,6 +11,8 @@ from napari.utils.transforms import Affine
 from numpy.typing import NDArray
 from pint import get_application_registry
 
+from localize_psf.processing import Volume
+
 from .config import LocalizationConfig
 
 if TYPE_CHECKING:
@@ -18,12 +20,9 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class Preview:
+class Preview(Volume):
     """One cropped ZYX volume; origin is the crop's physical first voxel in µm."""
 
-    image: NDArray[np.float32]
-    spacing: tuple[float, float, float]
-    origin: tuple[float, float, float]
     config: LocalizationConfig
 
     def layer_coordinates(self, points_zyx_px: NDArray[np.floating]) -> NDArray[np.float64]:

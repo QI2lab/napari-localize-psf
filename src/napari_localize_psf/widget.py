@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shlex
 import sys
 from collections.abc import Callable
 from concurrent.futures import CancelledError
@@ -284,7 +283,7 @@ class LocalizationWidget(QWidget):
         self.batch_button.clicked.connect(self._copy_batch_command)
         form.addRow(self.batch_button)
         self.batch_note = QLabel(
-            "Save JSON, choose an output directory, then copy the command to run in a terminal. The command requires the updated localize-psf batch runner."
+            "Save JSON, choose an output directory, then copy the command to run in a terminal. The batch file uses this installed environment."
         )
         self.batch_note.setWordWrap(True)
         form.addRow(self.batch_note)
@@ -845,28 +844,14 @@ class LocalizationWidget(QWidget):
             config = self.current_config()
             if self._config_path is None or not self.output.text().strip() or not config.input_uri:
                 raise ValueError("Save JSON and choose an input and output directory first")
-            config.save(self._config_path)
-            arguments = [
-                sys.executable,
-                "-m",
-                "localize_psf.batch",
-                config.input_uri,
-                "--metadata",
-                str(self._config_path.resolve()),
-                "--output-dir",
-                str(Path(self.output.text().strip()).resolve()),
-            ]
-            # PowerShell single-quoted literals escape apostrophes by doubling them.
-            command = (
-                "& " + " ".join("'" + argument.replace("'", "''") + "'" for argument in arguments)
-                if sys.platform == "win32"
-                else shlex.join(arguments)
+            script, command = config.save_batch_file(
+                self._config_path, self.output.text().strip(), interpreter=sys.executable
             )
             self.config_view.setPlainText(config.model_dump_json(indent=2))
             self.command_view.setPlainText(command)
             QApplication.clipboard().setText(command)
             self.status.setText(
-                "Saved current JSON and copied the batch command for your terminal."
+                f"Saved current JSON and {script.name}; copied the batch command for your terminal."
             )
         except Exception as error:
             self._errored(error)

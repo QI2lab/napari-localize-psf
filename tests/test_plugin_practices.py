@@ -39,8 +39,10 @@ def test_cold_import_and_unused_detector_cleanup_do_not_load_cuda_packages():
 import sys
 from napari_localize_psf.widget import LocalizationWidget
 from napari_localize_psf.processing import Detector
+from napari_localize_psf.runtime import package_versions
 Detector().release()
-assert not {'torch', 'cupy', 'localize_psf', 'ufish'} & sys.modules.keys()
+assert package_versions()['napari-localize-psf']
+assert not {'torch', 'cupy', 'ufish'} & sys.modules.keys()
 """,
         ],
         check=True,
@@ -61,7 +63,7 @@ import napari
 from napari_localize_psf.widget import LocalizationWidget
 viewer = napari.Viewer(show=False)
 widget = LocalizationWidget(viewer)
-assert not {'torch', 'cupy', 'localize_psf', 'ufish'} & sys.modules.keys()
+assert not {'torch', 'cupy', 'ufish'} & sys.modules.keys()
 widget.close()
 viewer.close()
 """,

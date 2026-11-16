@@ -1,6 +1,7 @@
 # Repository instructions
 
-- Keep changes local to this repository. Do not edit localize-psf or its batch example.
+- Configuration, detection, fitting policy, and batch processing belong to localize-psf.
+  Keep this plugin limited to its UI, source-layer adapters, and exporting runnable batch files.
 - Export JSON and provide a copyable batch command; never launch batch processing
   or own batch subprocesses from the plugin.
 - Resolve only Linux x86-64 and Windows x64, using the same declared GPU stack.
@@ -21,6 +22,7 @@
   data are allowed; reuse production models to generate them.
 - Test plugin-owned behavior and package integration; do not duplicate upstream
   GPUfit solver, CUDA kernel, ABI, or installation validation tests.
+- GitHub Actions installs only test/development dependencies and the plugin;
+  upstream native backends must not be built or validated by these jobs.
 - Keep helper functions minimal. Annotate production functions and document
   coordinate conventions, units, and interfaces.
-- Keep the batch handoff aligned with the exported configuration schema.

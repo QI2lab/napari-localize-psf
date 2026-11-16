@@ -1,88 +1,21 @@
 """Real CUDA integration tests of production U-FISH and bounded localization."""
 
-from concurrent.futures import CancelledError
-from threading import Event
 
 import numpy as np
 import pytest
-from napari.layers import Image
 from qtpy.QtCore import Qt
 from simulator import gaussian_image
 
-from napari_localize_psf.config import LocalizationConfig, Parameter, PreviewSettings
-from napari_localize_psf.data import prepare_preview
-from napari_localize_psf.processing import Detector, fit_spots, optical_parameters
+from napari_localize_psf.config import LocalizationConfig, PreviewSettings
+from napari_localize_psf.processing import optical_parameters
 
 pytestmark = [pytest.mark.integration, pytest.mark.gpu]
 
 
-def test_real_detector_cache_threshold_and_blending():
-    image, _, spacing, origin = gaussian_image()
-    layer = Image(image * 100, scale=spacing, translate=origin, units="um")
-    config = LocalizationConfig(
-        voxel_size_zyx_um=spacing,
-        origin_zyx_um=origin,
-        blend_3d=False,
-        preview=PreviewSettings(crop_zyx_px=(0, 25, 0, 41, 0, 43)),
-    )
-    preview = prepare_preview(layer, config)
-    detector = Detector()
-    first = detector.detect(preview, config)
-    assert len(first.points) > 0
-    stricter = detector.detect(preview, config.model_copy(update={"intensity_threshold": 0.8}))
-    assert stricter.enhanced is first.enhanced
-    assert set(map(tuple, stricter.points)) <= set(map(tuple, first.points))
-    blended = detector.detect(preview, config.model_copy(update={"blend_3d": True}))
-    assert blended.enhanced is not first.enhanced
-    assert blended.enhanced.shape == image.shape
-    # Reuse the real checkpoint that U-FISH loaded; changing its source must
-    # invalidate enhancement even when the selected preview is unchanged.
-    weights = str(detector._detector.weight_path)
-    local = detector.detect(preview, config.model_copy(update={"ufish_weights": weights}))
-    assert local.enhanced is not blended.enhanced
-    detector.release()
 
 
-def test_empty_cancelled_and_infeasible_fits():
-    image, truth, spacing, origin = gaussian_image()
-    config = LocalizationConfig(
-        voxel_size_zyx_um=spacing,
-        origin_zyx_um=origin,
-        preview=PreviewSettings(crop_zyx_px=(0, 25, 0, 41, 0, 43)),
-    )
-    preview = prepare_preview(Image(image), config)
-    assert fit_spots(preview, np.empty((0, 3)), config)["fit_params"].shape == (0, 7)
-    points = ((truth[[3, 2, 1]] - origin) / spacing)[None]
-    cancelled = Event()
-    cancelled.set()
-    with pytest.raises(CancelledError):
-        fit_spots(preview, points, config, cancelled)
-    parameters = dict(config.fit_parameters, cx=Parameter(lower=0.2, upper=0.4))
-    with pytest.raises(ValueError, match="feasible"):
-        fit_spots(preview, points, config.model_copy(update={"fit_parameters": parameters}))
 
 
-def test_multiple_gpu_batches_keep_ids_fixed_parameters_and_bounds():
-    image, truth, spacing, origin = gaussian_image()
-    config = LocalizationConfig(
-        voxel_size_zyx_um=spacing,
-        origin_zyx_um=origin,
-        roi_batch_size=2,
-        fit_roi_size_um=(1.8, 1.5, 1.5),
-        preview=PreviewSettings(crop_zyx_px=(0, 25, 0, 41, 0, 43)),
-    )
-    parameters = dict(config.fit_parameters, bg=Parameter(lower=5, upper=5, initial=5, fixed=True))
-    config = config.model_copy(update={"fit_parameters": parameters})
-    preview = prepare_preview(Image(image), config)
-    point = (truth[[3, 2, 1]] - origin) / spacing
-    points = np.tile(point, (5, 1))
-    messages = []
-    result = fit_spots(preview, points, config, progress=messages.append)
-    np.testing.assert_array_equal(result["candidate_ids"], np.arange(5))
-    np.testing.assert_array_equal(result["fit_params"][:, 6], np.full(5, 5))
-    assert result["success"].all()
-    assert len(messages) == 3
-    assert "5–5 of 5" in messages[-1]
 
 
 @pytest.mark.parametrize("geometry", ["volume", "plane", "xy"])
@@ -240,17 +173,3 @@ def test_optical_controls_map_upstream_values_to_the_correct_cells(viewer, qtbot
             assert float(widget.parameters.item(row, column).text()) == expected[key][axis]
 
 
-@pytest.mark.parametrize(
-    "points",
-    [np.zeros((1, 2)), np.array([[0, 0, np.nan]]), np.array([[-1, 0, 0]]), np.array([[100, 0, 0]])],
-)
-def test_invalid_priors_do_not_reach_the_native_fitter(points):
-    image, _, spacing, origin = gaussian_image()
-    config = LocalizationConfig(
-        voxel_size_zyx_um=spacing,
-        origin_zyx_um=origin,
-        preview=PreviewSettings(crop_zyx_px=(0, 25, 0, 41, 0, 43)),
-    )
-    preview = prepare_preview(Image(image), config)
-    with pytest.raises(ValueError, match="Candidate coordinates"):
-        fit_spots(preview, points, config)

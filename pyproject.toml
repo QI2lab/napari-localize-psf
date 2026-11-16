@@ -42,6 +42,7 @@ test = [
     "pytest>=9",
     "pytest-cov>=7",
     "pytest-qt>=4.5",
+    "yaozarrs[io,write-tensorstore] @ git+https://github.com/imaging-formats/yaozarrs.git@main",
 ]
 
 [tool.uv]
