@@ -66,6 +66,7 @@ def test_real_json_dialogs_are_parented_and_roundtrip(viewer, qtbot, tmp_path, s
     widget = LocalizationWidget(viewer)
     qtbot.addWidget(widget)
     path = tmp_path / "settings.json"
+    widget.exclude_edges.setChecked(True)
     widget._show_json()
     assert json.loads(widget.config_view.toPlainText())["fit_model"] == "3d"
     widget._copy_json()
@@ -73,10 +74,13 @@ def test_real_json_dialogs_are_parented_and_roundtrip(viewer, qtbot, tmp_path, s
     select_real_file(path, widget)
     widget._save_json()
     assert LocalizationConfig.load(path).intensity_threshold == 0.2
+    assert LocalizationConfig.load(path).exclude_edge_centroids
     widget.threshold.setValue(0.7)
+    widget.exclude_edges.setChecked(False)
     select_real_file(path, widget)
     widget._load_json()
     assert widget.current_config().intensity_threshold == 0.2
+    assert widget.exclude_edges.isChecked()
     assert widget._config_path == path
 
 

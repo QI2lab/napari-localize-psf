@@ -186,6 +186,14 @@ class LocalizationWidget(QWidget):
         self.threshold.setValue(0.2)
         self.threshold.valueChanged.connect(self._invalidate_detection)
         form.addRow("Intensity threshold", self.threshold)
+        self.exclude_edges = QCheckBox("Exclude centroids on volume edges")
+        self.exclude_edges.setChecked(defaults.exclude_edge_centroids)
+        self.exclude_edges.setToolTip(
+            "Exclude the outermost Z/Y/X voxel planes (Y/X in 2D) from priors, fits, and batch "
+            "processing. Preview again to apply; enhancement is reused."
+        )
+        self.exclude_edges.toggled.connect(self._invalidate_detection)
+        form.addRow(self.exclude_edges)
         self.weights = QLineEdit(defaults.ufish_weights)
         self.weights.textChanged.connect(self._invalidate_detection)
         form.addRow("Weights file / model name", self.weights)
@@ -489,6 +497,7 @@ class LocalizationWidget(QWidget):
             fit_model=self.model.currentText(),
             blend_3d=self.blend.isChecked(),
             intensity_threshold=self.threshold.value(),
+            exclude_edge_centroids=self.exclude_edges.isChecked(),
             ufish_weights=self.weights.text().strip(),
             inference_batch_size=self.inference_batch.value(),
             fit_parameters=parameters,
@@ -813,6 +822,7 @@ class LocalizationWidget(QWidget):
         self.path.setText(config.input_uri)
         self.blend.setChecked(config.blend_3d)
         self.threshold.setValue(config.intensity_threshold)
+        self.exclude_edges.setChecked(config.exclude_edge_centroids)
         self.weights.setText(config.ufish_weights)
         self.inference_batch.setValue(config.inference_batch_size)
         self.manual.setChecked(True)
