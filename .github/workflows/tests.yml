@@ -27,7 +27,6 @@ jobs:
       NAPARI_CONFIG: ""
       PYTHONUTF8: "1"
       MPLBACKEND: Agg
-      UV_CACHE_DIR: ${{ runner.temp }}/uv-cache
       CUPY_CACHE_DIR: ${{ github.workspace }}/.venv/.cache/cupy
     steps:
       - name: Check out source
@@ -41,6 +40,7 @@ jobs:
           version: "0.12.3"
           python-version: ${{ matrix.python }}
           enable-cache: true
+          cache-local-path: ${{ runner.temp }}/uv-cache
           prune-cache: true
           cache-suffix: ${{ matrix.python }}
           cache-dependency-glob: uv.lock
