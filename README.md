@@ -32,6 +32,8 @@ Open **Plugins → QI2lab Localization**.
 4. Set fit bounds, initial values, fixed parameters, and solver options, then
    preview Gaussian fits. Positions and widths use µm; center settings are
    offsets from each prior.
+   Use **Fit filters** to select an amplitude range and covariance or convergence
+   pass/fail. Filters update the overlay and are saved for batch exports.
 5. Save the JSON settings. Choose an output directory and select **Copy batch
    command** to copy a command for your terminal.
 

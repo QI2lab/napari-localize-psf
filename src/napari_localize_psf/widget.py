@@ -41,7 +41,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from .config import LocalizationConfig, Parameter, PreviewSettings
+from .config import FitFilters, LocalizationConfig, Parameter, PreviewSettings
 from .data import (
     Preview,
     layer_calibration,
@@ -50,11 +50,12 @@ from .data import (
     prepare_image_layers,
     prepare_preview,
 )
-from .processing import Detector, FitResults, fit_spots, optical_parameters
+from .processing import Detector, FitResults, fit_filter_mask, fit_spots, optical_parameters
 from .runtime import package_versions
 
 if TYPE_CHECKING:
     from napari import Viewer
+    from napari.layers import Points
 
 type JobResult = (
     dict[str, tuple[float, float, float]]
@@ -77,6 +78,8 @@ class LocalizationWidget(QWidget):
         self.detector = Detector()
         self._preview: Preview | None = None
         self._detection: tuple[np.ndarray, np.ndarray] | None = None
+        self._fit_layer: Points | None = None
+        self.fit_filter_status = QLabel("Run a GPU fit preview to filter its results.", self)
         self._layer: Image | None = None
         self._revision = 0
         self._job_revision = 0
@@ -93,10 +96,10 @@ class LocalizationWidget(QWidget):
         layout = QVBoxLayout(self)
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
-        data_page, prior_page, fit_page, export_page = (QWidget() for _ in range(4))
+        data_page, prior_page, fit_page, filter_page, export_page = (QWidget() for _ in range(5))
         for page, title in zip(
-            (data_page, prior_page, fit_page, export_page),
-            ("Data", "U-FISH", "Fits", "Export / batch"),
+            (data_page, prior_page, fit_page, filter_page, export_page),
+            ("Data", "U-FISH", "Fits", "Fit filters", "Export / batch"),
             strict=True,
         ):
             scroll = QScrollArea()
@@ -280,6 +283,40 @@ class LocalizationWidget(QWidget):
         self.fit_button = QPushButton("Preview bounded GPU fits")
         self.fit_button.clicked.connect(self.run_fitting)
         form.addRow(self.fit_button)
+
+        form = QFormLayout(filter_page)
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self.amplitude_min = QLineEdit()
+        self.amplitude_max = QLineEdit()
+        for control, label, placeholder in (
+            (self.amplitude_min, "Minimum amplitude (counts)", "No minimum"),
+            (self.amplitude_max, "Maximum amplitude (counts)", "No maximum"),
+        ):
+            control.setPlaceholderText(placeholder)
+            control.editingFinished.connect(self._apply_fit_filters)
+            form.addRow(label, control)
+        self.fit_convergence = QComboBox()
+        self.fit_covariance = QComboBox()
+        for control, label in (
+            (self.fit_convergence, "Converged"),
+            (self.fit_covariance, "Covariance valid"),
+        ):
+            control.addItems(["All", "Pass", "Fail"])
+            control.currentIndexChanged.connect(self._apply_fit_filters)
+            form.addRow(label, control)
+        note = QLabel(
+            "All selected conditions must pass. Amplitude limits are inclusive and use "
+            "original image counts. Filters update existing fits without refitting and "
+            "are saved in JSON for batch exports. Covariance filtering enables diagnostics "
+            "for the next fit; existing fits without diagnostics must be rerun."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+        self.fit_filter_status.setWordWrap(True)
+        form.addRow(self.fit_filter_status)
+        reset_filters = QPushButton("Reset fit filters")
+        reset_filters.clicked.connect(self._reset_fit_filters)
+        form.addRow(reset_filters)
 
         form = QFormLayout(export_page)
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
@@ -470,12 +507,74 @@ class LocalizationWidget(QWidget):
         """Threshold changes keep enhancement reusable but invalidate candidate points."""
         self._revision += 1
         self._detection = None
+        self._fit_layer = None
+        self.fit_filter_status.setText("Run a GPU fit preview to filter its results.")
 
     def _edge_filter_changed(self, *args: object) -> None:
         """Refresh existing priors through the shared detector's cached enhancement."""
         self._invalidate_detection()
         if self._preview is not None and not self._busy and not self._closing:
             self.run_detection()
+
+    def _fit_filter_settings(self) -> FitFilters:
+        """Adapt optional count limits and status selectors to the upstream policy."""
+        return FitFilters(
+            amplitude_min=float(self.amplitude_min.text())
+            if self.amplitude_min.text().strip()
+            else None,
+            amplitude_max=float(self.amplitude_max.text())
+            if self.amplitude_max.text().strip()
+            else None,
+            convergence=self.fit_convergence.currentText().lower(),
+            covariance=self.fit_covariance.currentText().lower(),
+        )
+
+    def _apply_fit_filters(self, *args: object) -> None:
+        """Apply the shared mask through napari's public per-point visibility API."""
+        if self._closing:
+            return
+        try:
+            filters = self._fit_filter_settings()
+            if filters.covariance != "all":
+                self.covariance.setChecked(True)
+            layer = self._fit_layer
+            if layer is None or layer not in self.viewer.layers:
+                self.fit_filter_status.setText("Run a GPU fit preview to filter its results.")
+                return
+            features = layer.features
+            if filters.covariance != "all" and "covariance_valid" not in features:
+                layer.shown = np.zeros(len(layer.data), dtype=bool)
+                self.fit_filter_status.setText(
+                    "Covariance diagnostics were not computed. Enable covariance and rerun GPU fits."
+                )
+                return
+            mask = fit_filter_mask(
+                features[list(self.parameter_names)].to_numpy(),
+                features["success"].to_numpy(),
+                features["covariance_valid"].to_numpy() if "covariance_valid" in features else None,
+                filters,
+            )
+            layer.shown = mask
+            layer.features = features.assign(filter_pass=mask)
+            layer.metadata = {
+                **layer.metadata,
+                "configuration": {
+                    **layer.metadata["configuration"],
+                    "fit_filters": filters.model_dump(),
+                },
+            }
+            self.fit_filter_status.setText(f"Showing {int(mask.sum())} / {len(mask)} fits.")
+        except Exception as error:
+            self.fit_filter_status.setText(str(error))
+
+    def _reset_fit_filters(self) -> None:
+        """Restore all preview fits and the default batch acceptance policy."""
+        with QSignalBlocker(self.fit_convergence), QSignalBlocker(self.fit_covariance):
+            self.amplitude_min.clear()
+            self.amplitude_max.clear()
+            self.fit_convergence.setCurrentIndex(0)
+            self.fit_covariance.setCurrentIndex(0)
+        self._apply_fit_filters()
 
     def current_config(self) -> LocalizationConfig:
         """Snapshot and validate all controls before starting any worker or export."""
@@ -521,6 +620,7 @@ class LocalizationWidget(QWidget):
             origin_zyx_um=origin,
             estimator=self.estimator.currentText(),
             return_covariance=self.covariance.isChecked(),
+            fit_filters=self._fit_filter_settings(),
             **{key: box.value() for key, box in self.solver.items()},
             **{
                 key: box.value() for key, box in self.optics.items() if not key.startswith("sigma_")
@@ -686,13 +786,14 @@ class LocalizationWidget(QWidget):
             features["active_bound"] = np.any(result["active_bounds"], axis=1)
             if "covariance_valid" in result:
                 features["covariance_valid"] = result["covariance_valid"]
-            self._replace_points(
+            self._fit_layer = self._replace_points(
                 "Gaussian fits",
                 layer_coordinates(points, source_config),
                 transforms,
                 features,
                 config,
             )
+            self._apply_fit_filters()
             self.status.setText(
                 f"Converged {int(np.sum(result['success']))} / {len(parameters)} fits; {int(np.sum(features['active_bound']))} with active bounds. Parameters are in the points features table."
             )
@@ -704,12 +805,12 @@ class LocalizationWidget(QWidget):
         transforms: dict[str, object],
         features: pd.DataFrame,
         config: LocalizationConfig | None = None,
-    ) -> None:
+    ) -> Points:
         """Keep named overlays and their inspectable production fit features together."""
         if name in self.viewer.layers:
             self.viewer.layers.remove(name)
-        kwargs = {"features": features} if len(features) else {}
-        self.viewer.add_points(
+        kwargs = {"features": features} if len(features.columns) else {}
+        return self.viewer.add_points(
             data,
             name=name,
             size=5,
@@ -872,6 +973,19 @@ class LocalizationWidget(QWidget):
             )
         self.estimator.setCurrentText(config.estimator)
         self.covariance.setChecked(config.return_covariance)
+        with QSignalBlocker(self.fit_convergence), QSignalBlocker(self.fit_covariance):
+            self.amplitude_min.setText(
+                ""
+                if config.fit_filters.amplitude_min is None
+                else str(config.fit_filters.amplitude_min)
+            )
+            self.amplitude_max.setText(
+                ""
+                if config.fit_filters.amplitude_max is None
+                else str(config.fit_filters.amplitude_max)
+            )
+            self.fit_convergence.setCurrentText(config.fit_filters.convergence.capitalize())
+            self.fit_covariance.setCurrentText(config.fit_filters.covariance.capitalize())
         self.batch_all.setChecked(config.batch_axes)
         self._invalidate_data()
         self.config_view.setPlainText(config.model_dump_json(indent=2))
@@ -923,7 +1037,7 @@ class LocalizationWidget(QWidget):
         if self._layer is not None:
             for name in _SOURCE_EVENTS:
                 getattr(self._layer.events, name).disconnect(self._source_changed)
-        self._layer = self._preview = self._detection = None
+        self._layer = self._preview = self._detection = self._fit_layer = None
         self.layers.clear()
         if self._worker is not None:
             self._worker.quit()

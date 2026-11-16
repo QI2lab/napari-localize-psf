@@ -97,10 +97,72 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geome
     if plane:
         np.testing.assert_allclose(fitted.features["cz"], origin[0])
         np.testing.assert_allclose(fitted.features["sz"], 1)
+    coordinates = fitted.data.copy()
+    amplitude = np.asarray(fitted.features["amp"])
+    minimum, maximum = np.quantile(amplitude, [0.25, 0.75])
+    widget.amplitude_min.setText(repr(float(minimum)))
+    widget.amplitude_max.setText(repr(float(maximum)))
+    widget.amplitude_max.editingFinished.emit()
+    in_range = (amplitude >= minimum) & (amplitude <= maximum)
+    np.testing.assert_array_equal(fitted.shown, in_range)
+    for convergence in ("Pass", "Fail", "All"):
+        widget.fit_convergence.setCurrentText(convergence)
+        for covariance in ("Pass", "Fail", "All"):
+            widget.fit_covariance.setCurrentText(covariance)
+            expected = in_range.copy()
+            if convergence != "All":
+                expected &= np.asarray(fitted.features["success"]) == (convergence == "Pass")
+            if covariance != "All":
+                expected &= np.asarray(fitted.features["covariance_valid"]) == (
+                    covariance == "Pass"
+                )
+            np.testing.assert_array_equal(fitted.shown, expected)
+            np.testing.assert_array_equal(fitted.features["filter_pass"], expected)
+            assert (
+                fitted.metadata["configuration"]["fit_filters"]
+                == widget.current_config().fit_filters.model_dump()
+            )
+            assert not widget._busy and widget._worker is None
+            assert viewer.layers["Gaussian fits"] == fitted
+    np.testing.assert_array_equal(fitted.data, coordinates)
+    widget._reset_fit_filters()
+    assert fitted.shown.all()
+    widget.covariance.setChecked(False)
     widget.run_fitting()
     qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
     assert viewer.layers["Gaussian fits"] is not fitted
     assert sum(layer.name == "Gaussian fits" for layer in viewer.layers) == 1
+    without_covariance = viewer.layers["Gaussian fits"]
+    assert "covariance_valid" not in without_covariance.features
+    widget.fit_covariance.setCurrentText("Pass")
+    assert widget.covariance.isChecked()
+    assert not without_covariance.shown.any()
+    assert "not computed" in widget.fit_filter_status.text()
+    widget.fit_covariance.setCurrentText("Fail")
+    assert not without_covariance.shown.any()
+    widget._reset_fit_filters()
+    assert without_covariance.shown.all()
+
+
+def test_fit_filters_handle_an_empty_production_preview(viewer, qtbot):
+    from napari_localize_psf.widget import LocalizationWidget
+
+    image, _, spacing, origin = gaussian_image()
+    viewer.add_image(image, scale=spacing, translate=origin, units="um")
+    widget = LocalizationWidget(viewer)
+    qtbot.addWidget(widget)
+    widget.threshold.setValue(1e9)
+    widget.run_detection()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._detection is not None and len(widget._detection[0]) == 0
+    widget.run_fitting()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    fitted = viewer.layers["Gaussian fits"]
+    assert not len(fitted.data)
+    assert "amp" in fitted.features and "filter_pass" in fitted.features
+    widget.amplitude_min.setText("1")
+    widget.amplitude_min.editingFinished.emit()
+    assert widget.fit_filter_status.text() == "Showing 0 / 0 fits."
 
 
 def test_closing_during_real_inference_cancels_publication_and_releases_model(viewer, qtbot):
