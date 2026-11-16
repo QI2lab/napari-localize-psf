@@ -1061,7 +1061,7 @@ wheels = [
 [[package]]
 name = "localize-psf"
 version = "0.2.0"
-source = { git = "https://github.com/QI2lab/localize-psf.git?branch=opm-ptv#d3b36dfe698070d7c6631bbaa28c53ef65002554" }
+source = { git = "https://github.com/QI2lab/localize-psf.git?branch=opm-ptv#5f89f1c33f7713de4b14fcf992d82b867aa87fc9" }
 dependencies = [
     { name = "joblib" },
     { name = "matplotlib" },
