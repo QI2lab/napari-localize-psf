@@ -95,7 +95,7 @@ def test_real_tiff_dialog_reads_through_upstream_reader(viewer, qtbot, tmp_path,
     widget._choose_tiff()
     assert len(viewer.layers) == 1
     assert viewer.layers[0].source.reader_plugin == "napari-tiff"
-    assert widget.path.text() == str(path)
+    assert Path(widget.path.text()) == path
 
 
 def test_invalid_actions_show_errors_without_starting_workers(viewer, qtbot):
