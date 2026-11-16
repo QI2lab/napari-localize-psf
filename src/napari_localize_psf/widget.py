@@ -186,11 +186,12 @@ class LocalizationWidget(QWidget):
         self.threshold.setValue(0.2)
         self.threshold.valueChanged.connect(self._invalidate_detection)
         form.addRow("Intensity threshold", self.threshold)
-        self.exclude_edges = QCheckBox("Exclude centroids on volume edges")
+        self.exclude_edges = QCheckBox("Exclude centroids near data edges")
         self.exclude_edges.setChecked(defaults.exclude_edge_centroids)
         self.exclude_edges.setToolTip(
-            "Exclude an edge band along Z/Y/X (Y/X in 2D) from priors, fits, and batch "
-            "processing. Changes update existing priors using cached enhancement."
+            "Exclude a voxel-distance band at image faces and sloping boundaries of "
+            "zero-padded data (Y/X only in 2D). Applies to priors, fits, and batch "
+            "processing. Changes reuse enhancement and footprint distances."
         )
         self.edge_margin = QSpinBox()
         self.edge_margin.setRange(1, 1_000_000)

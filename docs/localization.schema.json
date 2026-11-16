@@ -154,6 +154,19 @@
       "title": "Intensity Threshold",
       "type": "number"
     },
+    "exclude_edge_centroids": {
+      "default": false,
+      "description": "Exclude centroids near array faces and zero-padded data-footprint edges (YX in 2D).",
+      "title": "Exclude Edge Centroids",
+      "type": "boolean"
+    },
+    "edge_margin_px": {
+      "default": 2,
+      "description": "Excluded voxel layers at each face.",
+      "minimum": 1,
+      "title": "Edge Margin Px",
+      "type": "integer"
+    },
     "ufish_weights": {
       "default": "finetune_models/v1.0.1-simfish_model.pth",
       "title": "Ufish Weights",
