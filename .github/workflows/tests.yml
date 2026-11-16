@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [ubuntu-24.04, windows-2022]
+        platform: [ubuntu-24.04, windows-latest]
         python: ["3.12", "3.13", "3.14"]
     env:
       NAPARI_CONFIG: ""
@@ -54,6 +54,7 @@ jobs:
 
       - name: Install plugin test dependencies
         run: |
+          # The test group includes upstream core APIs without GPU/example extras.
           uv sync --locked --only-group dev --only-group test --python ${{ matrix.python }}
           uv pip install --no-deps --editable .
 

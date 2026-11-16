@@ -1061,12 +1061,13 @@ wheels = [
 [[package]]
 name = "localize-psf"
 version = "0.2.0"
-source = { git = "https://github.com/QI2lab/localize-psf.git?branch=opm-ptv#e3e472f26fb4ae95c53b4feae83c321b85b4a842" }
+source = { git = "https://github.com/QI2lab/localize-psf.git?branch=opm-ptv#7dd66a96b8e331591a6b65a9c4fe59ecd4be68dc" }
 dependencies = [
     { name = "joblib" },
     { name = "matplotlib" },
     { name = "numba" },
     { name = "numpy" },
+    { name = "pydantic" },
     { name = "scipy" },
 ]
 
@@ -1436,6 +1437,7 @@ dev = [
     { name = "ruff" },
 ]
 test = [
+    { name = "localize-psf" },
     { name = "napari", extra = ["pyqt6"] },
     { name = "napari-ome-zarr" },
     { name = "napari-tiff" },
@@ -1462,6 +1464,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [{ name = "ruff", specifier = ">=0.16" }]
 test = [
+    { name = "localize-psf", git = "https://github.com/QI2lab/localize-psf.git?branch=opm-ptv" },
     { name = "napari", extras = ["pyqt6"], specifier = ">=0.10.0" },
     { name = "napari-ome-zarr", specifier = ">=0.11.0" },
     { name = "napari-tiff", specifier = ">=0.1.6" },

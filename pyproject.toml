@@ -34,6 +34,7 @@ napari-localize-psf = "napari_localize_psf:napari.yaml"
 [dependency-groups]
 dev = ["ruff>=0.16"]
 test = [
+    "localize-psf",
     "napari[pyqt6]>=0.10.0",
     "napari-ome-zarr>=0.11.0",
     "napari-tiff>=0.1.6",

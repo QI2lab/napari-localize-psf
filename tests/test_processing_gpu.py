@@ -1,6 +1,5 @@
 """Real CUDA integration tests of production U-FISH and bounded localization."""
 
-
 import numpy as np
 import pytest
 from qtpy.QtCore import Qt
@@ -10,12 +9,6 @@ from napari_localize_psf.config import LocalizationConfig, PreviewSettings
 from napari_localize_psf.processing import optical_parameters
 
 pytestmark = [pytest.mark.integration, pytest.mark.gpu]
-
-
-
-
-
-
 
 
 @pytest.mark.parametrize("geometry", ["volume", "plane", "xy"])
@@ -171,5 +164,3 @@ def test_optical_controls_map_upstream_values_to_the_correct_cells(viewer, qtbot
             ("lower_sigma_zyx_um", "upper_sigma_zyx_um", "nominal_sigma_zyx_um")
         ):
             assert float(widget.parameters.item(row, column).text()) == expected[key][axis]
-
-

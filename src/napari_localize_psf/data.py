@@ -6,12 +6,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
+from localize_psf.processing import Volume, prepare_volume
 from napari.layers import Image
 from napari.utils.transforms import Affine
 from numpy.typing import NDArray
 from pint import get_application_registry
-
-from localize_psf.processing import Volume
 
 from .config import LocalizationConfig
 
@@ -128,34 +127,5 @@ def prepare_preview(layer: Image, config: LocalizationConfig) -> Preview:
     data = layer.data[0] if layer.multiscale else layer.data
     if layer.rgb or len(settings.axes) != data.ndim:
         raise ValueError("Select a scalar image with an explicit, matching axis order")
-    crop = np.asarray(settings.crop_zyx_px).reshape(3, 2).copy()
-    if config.fit_model == "2d":
-        crop[0] = (settings.z_plane, settings.z_plane + 1) if "z" in settings.axes else (0, 1)
-    elif "z" not in settings.axes or data.shape[settings.axes.index("z")] < 2:
-        raise ValueError("3D fitting requires a Z stack; select 2D for an XY image")
-    indices: list[int | slice] = []
-    for axis, size in zip(settings.axes, data.shape, strict=True):
-        if axis in "tc":
-            index = settings.timepoint if axis == "t" else settings.channel
-            if index >= size:
-                raise ValueError(f"Selected {axis} index is outside the image")
-            indices.append(index)
-        else:
-            start, stop = crop["zyx".index(axis)]
-            if stop > size:
-                raise ValueError(f"Preview crop exceeds the {axis} dimension ({size})")
-            indices.append(slice(int(start), int(stop)))
-    selected = data[tuple(indices)]
-    spatial_axes = "".join(a for a in settings.axes if a not in "tc")
-    selected = selected.transpose(tuple(spatial_axes.index(a) for a in "zyx" if a in spatial_axes))
-    image = np.asarray(selected, dtype=np.float32)
-    if "z" not in spatial_axes:
-        image = image[None]
-    if not np.isfinite(image).all():
-        raise ValueError("Preview data must contain only finite counts")
-    if config.estimator == "MLE" and np.any(image < 0):
-        raise ValueError("Poisson MLE requires nonnegative photon/electron counts")
-    if min(image.shape[1:]) < 3:
-        raise ValueError("Preview must contain at least three pixels along X and Y")
-    origin = np.asarray(config.origin_zyx_um) + crop[:, 0] * config.voxel_size_zyx_um
-    return Preview(image, config.voxel_size_zyx_um, tuple(origin), config)
+    volume = prepare_volume(data, config)
+    return Preview(volume.image, volume.spacing, volume.origin, config)
