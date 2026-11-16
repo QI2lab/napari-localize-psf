@@ -1,0 +1,111 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "napari-localize-psf"
+version = "0.1.0"
+description = "Interactive configuration of QI2lab spot localization in napari."
+readme = "README.md"
+requires-python = ">=3.12"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: napari",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+dependencies = [
+    "localize-psf[gpu,example]",
+    "numpy>=2",
+    "ome-zarr>=0.20.1",
+    "pandas",
+    "pint",
+    "pydantic>=2",
+    "torch==2.9.0",
+]
+
+[project.entry-points."napari.manifest"]
+napari-localize-psf = "napari_localize_psf:napari.yaml"
+
+[dependency-groups]
+dev = ["ruff>=0.16"]
+test = [
+    "napari[pyqt6]>=0.10.0",
+    "napari-ome-zarr>=0.11.0",
+    "napari-tiff>=0.1.6",
+    "npe2>=0.10.2",
+    "qtpy>=2.4",
+    "pytest>=9",
+    "pytest-cov>=7",
+    "pytest-qt>=4.5",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/napari_localize_psf"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "docs", "examples", "environments/napari/pyproject.toml", "environments/napari/uv.lock", "pyproject.toml", "uv.lock", "README.md", "AGENTS.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: isolated production components",
+    "integration: production components working together",
+    "gpu: requires the installed CUDA environment and a real NVIDIA GPU",
+]
+filterwarnings = ["error:Private attribute .* in this context:FutureWarning"]
+
+[tool.coverage.run]
+source = ["napari_localize_psf"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "ANN"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN"]
+
+[tool.uv.sources]
+localize-psf = { git = "https://github.com/QI2lab/localize-psf.git", branch = "opm-ptv" }
+torch = [
+    { index = "pytorch-cu129", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+
+# uv build settings belong to the consuming project, so explicitly reuse the
+# localize-psf CUDA toolchain when building its transitive GPUfit dependency.
+[tool.uv.extra-build-dependencies]
+pygpufit = ["localize-psf-build-support @ git+https://github.com/QI2lab/localize-psf.git@opm-ptv#subdirectory=build_support"]
+
+[tool.uv.extra-build-variables]
+pygpufit = { CMAKE_EXECUTABLE = "localize-gpu-cmake", CMAKE_GENERATOR = "Ninja" }
+
+[[tool.uv.index]]
+name = "pytorch-cu129"
+url = "https://download.pytorch.org/whl/cu129"
+explicit = true
+
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com"

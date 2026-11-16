@@ -1,0 +1,52 @@
+[project]
+name = "napari-localize-psf-host"
+version = "0.0.0"
+description = "Local napari host environment for the separate localization plugin."
+requires-python = ">=3.12"
+dependencies = [
+    "napari[pyqt6]>=0.10.0",
+    "napari-ome-zarr>=0.11.0",
+    "napari-tiff>=0.1.6",
+    "napari-localize-psf",
+    "npe2>=0.10.2",
+    "qtpy>=2.4",
+    "torch==2.9.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=9", "pytest-cov>=7", "pytest-qt>=4.5", "ruff>=0.16"]
+
+[tool.uv]
+package = false
+environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+
+[tool.uv.sources]
+napari-localize-psf = { path = "../..", editable = true }
+localize-psf = { git = "https://github.com/QI2lab/localize-psf.git", branch = "opm-ptv" }
+torch = [
+    { index = "pytorch-cu129", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+
+# Consumer environments own uv build/index settings; dependency projects do not
+# supply them transitively. Reuse the same upstream package-managed CUDA build.
+[tool.uv.extra-build-dependencies]
+pygpufit = ["localize-psf-build-support @ git+https://github.com/QI2lab/localize-psf.git@opm-ptv#subdirectory=build_support"]
+
+[tool.uv.extra-build-variables]
+pygpufit = { CMAKE_EXECUTABLE = "localize-gpu-cmake", CMAKE_GENERATOR = "Ninja" }
+
+[[tool.uv.index]]
+name = "pytorch-cu129"
+url = "https://download.pytorch.org/whl/cu129"
+explicit = true
+
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com"

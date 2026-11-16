@@ -1,0 +1,12 @@
+name: napari-localize-psf
+display_name: QI2lab Localization
+schema_version: 0.2.0
+categories: [Image Processing, Measurement]
+contributions:
+  commands:
+    - id: napari-localize-psf.widget
+      title: Configure spot localization
+      python_name: napari_localize_psf.widget:LocalizationWidget
+  widgets:
+    - command: napari-localize-psf.widget
+      display_name: QI2lab Localization
