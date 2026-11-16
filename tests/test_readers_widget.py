@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 import tifffile
+from napari.utils.transforms import Affine
 from npe2 import PluginManifest
 
 from napari_localize_psf.config import LocalizationConfig
@@ -93,11 +94,18 @@ def test_ome_zarr_reader_multichannel_calibration(viewer, qtbot, tmp_path, group
     # The same metadata adapter must also cover images opened through File > Open.
     viewer.layers.clear()
     native = viewer.open(opened, plugin="napari-ome-zarr")
+    placement = Affine(translate=(10, 20, 30))
+    native[-1].affine = placement
     widget = LocalizationWidget(viewer)
     qtbot.addWidget(widget)
     widget.layers.setCurrentIndex(widget.layers.findData(native[-1]))
     config = widget.current_config()
-    np.testing.assert_allclose(config.origin_zyx_um, positions[selected_group])
+    np.testing.assert_allclose(
+        config.origin_zyx_um, np.asarray(positions[selected_group]) + (10, 20, 30)
+    )
+    np.testing.assert_allclose(native[-1].scale, (0.2, 0.1, 0.1))
+    np.testing.assert_allclose(native[-1].translate, positions[selected_group])
+    np.testing.assert_allclose(native[-1].affine.affine_matrix, placement.affine_matrix)
     assert config.input_uri == str(path / selected_group)
     assert config.channel == 1
 

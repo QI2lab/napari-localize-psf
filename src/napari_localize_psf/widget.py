@@ -631,9 +631,8 @@ class LocalizationWidget(QWidget):
                 else data.transpose(tuple("zyx".index(a) for a in spatial))
             )
             offset = layer_coordinates(np.zeros((1, 3)), source_config)[0]
-            affine = layer.affine.affine_matrix.copy()
-            # Compose the crop translation with the layer's public data/world map.
-            crop_transform = Affine(translate=offset, ndim=layer.ndim)
+            # Keep voxel calibration and the shared global affine separate.
+            # Only the crop's first voxel changes the enhancement translation.
             source_transform = Affine(
                 scale=layer.scale,
                 translate=layer.translate,
@@ -644,11 +643,7 @@ class LocalizationWidget(QWidget):
             self.viewer.add_image(
                 data.reshape(full_shape),
                 name=enhanced_name,
-                affine=Affine(affine_matrix=affine)
-                .compose(source_transform)
-                .compose(crop_transform),
-                axis_labels=layer.axis_labels,
-                units=layer.units,
+                **{**transforms, "translate": source_transform(offset)},
                 colormap="magenta",
                 blending="additive",
                 opacity=0.4,

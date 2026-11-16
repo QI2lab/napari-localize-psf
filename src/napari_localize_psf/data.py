@@ -97,9 +97,8 @@ def prepare_image_layers(images: list[Image], path: str) -> None:
     for image_uri, layers, transform in prepared:
         for channel, layer in enumerate(layers):
             if transform is not None:
-                layer.scale = np.ones(layer.ndim)
-                layer.translate = np.zeros(layer.ndim)
-                layer.affine = transform
+                layer.scale = transform.scale
+                layer.translate = transform.translate
             layer.metadata["napari_localize_psf"] = {
                 "input_uri": image_uri,
                 "source_channel": channel,

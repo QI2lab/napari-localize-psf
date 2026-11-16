@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from napari.utils.transforms import Affine
 from qtpy.QtCore import Qt
 from simulator import gaussian_image
 
@@ -25,6 +26,7 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geome
         scale=spacing[1:] if geometry == "xy" else (1, *spacing),
         translate=origin[1:] if geometry == "xy" else (0, *origin),
         units=("um", "um") if geometry == "xy" else ("s", "um", "um", "um"),
+        affine=Affine(translate=(7, -9) if geometry == "xy" else (0.05, 5, 7, -9)),
     )
     config = LocalizationConfig(
         fit_model="2d" if plane else "3d",
@@ -53,7 +55,15 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geome
     np.testing.assert_allclose(
         enhanced.data_to_world(np.zeros(source.ndim)), source.data_to_world(offset)
     )
+    np.testing.assert_allclose(enhanced.scale, source.scale)
+    np.testing.assert_allclose(enhanced.affine.affine_matrix, source.affine.affine_matrix)
+    for pixel in np.eye(source.ndim):
+        np.testing.assert_allclose(
+            enhanced.data_to_world(pixel), source.data_to_world(offset + pixel)
+        )
     priors = viewer.layers["U-FISH priors"]
+    np.testing.assert_allclose(priors.scale, source.scale)
+    np.testing.assert_allclose(priors.affine.affine_matrix, source.affine.affine_matrix)
     np.testing.assert_allclose(
         priors.data_to_world(priors.data[0]), source.data_to_world(priors.data[0])
     )
