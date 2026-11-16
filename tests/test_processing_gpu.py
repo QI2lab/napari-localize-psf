@@ -68,6 +68,26 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geome
         priors.data_to_world(priors.data[0]), source.data_to_world(priors.data[0])
     )
     cached_enhancement = widget._detection[1]
+    collapsed = widget._detection[0].copy()
+    widget.collapse_priors.setChecked(False)
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._detection[1] is cached_enhancement
+    assert len(widget._detection[0]) >= len(collapsed)
+    widget.collapse_priors.setChecked(True)
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._detection[1] is cached_enhancement
+    np.testing.assert_array_equal(widget._detection[0], collapsed)
+    wavelength = widget.optics["wavelength_um"].value()
+    widget.optics["wavelength_um"].setValue(wavelength / 2)
+    assert widget._detection is None
+    widget.optics["wavelength_um"].editingFinished.emit()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._detection[1] is cached_enhancement
+    assert len(widget._detection[0]) >= len(collapsed)
+    widget.optics["wavelength_um"].setValue(wavelength)
+    widget.optics["wavelength_um"].editingFinished.emit()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    np.testing.assert_array_equal(widget._detection[0], collapsed)
     widget.exclude_edges.setChecked(True)
     qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
     assert widget._detection[1] is cached_enhancement

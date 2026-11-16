@@ -189,6 +189,15 @@ class LocalizationWidget(QWidget):
         self.threshold.setValue(0.2)
         self.threshold.valueChanged.connect(self._invalidate_detection)
         form.addRow("Intensity threshold", self.threshold)
+        self.collapse_priors = QCheckBox("Collapse priors within 2 × optical PSF FWHM")
+        self.collapse_priors.setChecked(defaults.collapse_close_priors)
+        self.collapse_priors.setToolTip(
+            "Keep the strongest U-FISH enhancement peak when separations are within twice "
+            "the nominal Gaussian FWHM along every spatial axis, using NA, wavelength, "
+            "refractive index and voxel calibration. Applies to preview, fitting, and batch."
+        )
+        self.collapse_priors.toggled.connect(self._prior_policy_changed)
+        form.addRow(self.collapse_priors)
         self.exclude_edges = QCheckBox("Exclude centroids near data edges")
         self.exclude_edges.setChecked(defaults.exclude_edge_centroids)
         self.exclude_edges.setToolTip(
@@ -201,8 +210,8 @@ class LocalizationWidget(QWidget):
         self.edge_margin.setValue(defaults.edge_margin_px)
         self.edge_margin.setEnabled(defaults.exclude_edge_centroids)
         self.exclude_edges.toggled.connect(self.edge_margin.setEnabled)
-        self.exclude_edges.toggled.connect(self._edge_filter_changed)
-        self.edge_margin.valueChanged.connect(self._edge_filter_changed)
+        self.exclude_edges.toggled.connect(self._prior_policy_changed)
+        self.edge_margin.valueChanged.connect(self._prior_policy_changed)
         form.addRow(self.exclude_edges)
         form.addRow("Edge margin (voxels)", self.edge_margin)
         self.weights = QLineEdit(defaults.ufish_weights)
@@ -255,6 +264,9 @@ class LocalizationWidget(QWidget):
             box.setDecimals(5)
             box.setRange(0.00001, 100)
             box.setValue(value)
+            if not key.startswith("sigma_"):
+                box.valueChanged.connect(self._invalidate_detection)
+                box.editingFinished.connect(self._prior_policy_changed)
             self.optics[key] = box
             form.addRow(label, box)
         self.optics_button = QPushButton("Apply optical width bounds")
@@ -510,7 +522,7 @@ class LocalizationWidget(QWidget):
         self._fit_layer = None
         self.fit_filter_status.setText("Run a GPU fit preview to filter its results.")
 
-    def _edge_filter_changed(self, *args: object) -> None:
+    def _prior_policy_changed(self, *args: object) -> None:
         """Refresh existing priors through the shared detector's cached enhancement."""
         self._invalidate_detection()
         if self._preview is not None and not self._busy and not self._closing:
@@ -610,6 +622,7 @@ class LocalizationWidget(QWidget):
             fit_model=self.model.currentText(),
             blend_3d=self.blend.isChecked(),
             intensity_threshold=self.threshold.value(),
+            collapse_close_priors=self.collapse_priors.isChecked(),
             exclude_edge_centroids=self.exclude_edges.isChecked(),
             edge_margin_px=self.edge_margin.value(),
             ufish_weights=self.weights.text().strip(),
@@ -938,9 +951,14 @@ class LocalizationWidget(QWidget):
         self.path.setText(config.input_uri)
         self.blend.setChecked(config.blend_3d)
         self.threshold.setValue(config.intensity_threshold)
-        with QSignalBlocker(self.exclude_edges), QSignalBlocker(self.edge_margin):
+        with (
+            QSignalBlocker(self.exclude_edges),
+            QSignalBlocker(self.edge_margin),
+            QSignalBlocker(self.collapse_priors),
+        ):
             self.exclude_edges.setChecked(config.exclude_edge_centroids)
             self.edge_margin.setValue(config.edge_margin_px)
+            self.collapse_priors.setChecked(config.collapse_close_priors)
         self.edge_margin.setEnabled(config.exclude_edge_centroids)
         self.weights.setText(config.ufish_weights)
         self.inference_batch.setValue(config.inference_batch_size)

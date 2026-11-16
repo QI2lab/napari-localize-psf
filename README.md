@@ -26,6 +26,8 @@ Open **Plugins → QI2lab Localization**.
 2. Confirm the axes, physical calibration, and preview region. Choose a 2D plane
    or 3D volume.
 3. Preview U-FISH priors and adjust `blend_3d` and the intensity threshold.
+   Nearby priors collapse to the strongest peak within **2 × optical PSF FWHM**
+   along each spatial axis, using the optical settings in **Fits**.
    Enable **Exclude centroids on volume edges** to omit edge artifacts from
    previews, fits, and batch processing. The margin defaults to two voxels;
    adjust **Edge margin** to widen it. Existing priors update automatically.

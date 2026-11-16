@@ -68,6 +68,7 @@ def test_real_json_dialogs_are_parented_and_roundtrip(viewer, qtbot, tmp_path, s
     path = tmp_path / "settings.json"
     widget.exclude_edges.setChecked(True)
     widget.edge_margin.setValue(3)
+    widget.collapse_priors.setChecked(False)
     widget.amplitude_min.setText("150")
     widget.amplitude_max.setText("5000")
     widget.fit_covariance.setCurrentText("Pass")
@@ -81,17 +82,20 @@ def test_real_json_dialogs_are_parented_and_roundtrip(viewer, qtbot, tmp_path, s
     assert LocalizationConfig.load(path).intensity_threshold == 0.2
     assert LocalizationConfig.load(path).exclude_edge_centroids
     assert LocalizationConfig.load(path).edge_margin_px == 3
+    assert not LocalizationConfig.load(path).collapse_close_priors
     assert LocalizationConfig.load(path).fit_filters == widget.current_config().fit_filters
     assert LocalizationConfig.load(path).return_covariance
     widget.threshold.setValue(0.7)
     widget.exclude_edges.setChecked(False)
     widget.edge_margin.setValue(1)
+    widget.collapse_priors.setChecked(True)
     widget._reset_fit_filters()
     select_real_file(path, widget)
     widget._load_json()
     assert widget.current_config().intensity_threshold == 0.2
     assert widget.exclude_edges.isChecked()
     assert widget.edge_margin.value() == 3
+    assert not widget.collapse_priors.isChecked()
     assert widget.amplitude_min.text() == "150.0"
     assert widget.amplitude_max.text() == "5000.0"
     assert widget.fit_covariance.currentText() == "Pass"
@@ -104,6 +108,7 @@ def test_fit_filter_controls_validate_without_starting_gpu_work(viewer, qtbot):
     widget = LocalizationWidget(viewer)
     qtbot.addWidget(widget)
     assert "Fit filters" in [widget.tabs.tabText(i) for i in range(widget.tabs.count())]
+    assert widget.collapse_priors.isChecked()
     widget.amplitude_min.setText("200")
     widget.amplitude_max.setText("100")
     widget.amplitude_max.editingFinished.emit()
