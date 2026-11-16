@@ -69,15 +69,17 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geome
     )
     cached_enhancement = widget._detection[1]
     widget.exclude_edges.setChecked(True)
-    widget.run_detection()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._detection[1] is cached_enhancement
+    widget.edge_margin.setValue(3)
     qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
     assert widget._detection[1] is cached_enhancement
     assert widget.current_config().exclude_edge_centroids
     points = widget._detection[0]
     assert len(points)
     for axis in range(1 if plane else 0, 3):
-        assert points[:, axis].min() >= 1
-        assert points[:, axis].max() <= widget._preview[0].shape[axis] - 2
+        assert points[:, axis].min() >= 3
+        assert points[:, axis].max() <= widget._preview[0].shape[axis] - 4
     assert viewer.layers["U-FISH priors"] is not priors
     assert viewer.layers["U-FISH enhancement"] is not enhanced
     widget.run_fitting()
@@ -86,6 +88,7 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geome
     fitted = viewer.layers["Gaussian fits"]
     assert len(fitted.data) == len(points)
     assert fitted.metadata["configuration"]["exclude_edge_centroids"]
+    assert fitted.metadata["configuration"]["edge_margin_px"] == 3
     assert fitted.features["success"].any()
     assert "covariance_valid" in fitted.features
     nearest = np.asarray(fitted.features[["cz", "cy", "cx"]])

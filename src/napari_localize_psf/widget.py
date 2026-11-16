@@ -17,7 +17,7 @@ from napari.layers import Image
 from napari.qt.threading import create_worker
 from napari.utils.notifications import show_error
 from napari.utils.transforms import Affine
-from qtpy.QtCore import QEvent, Signal, Slot
+from qtpy.QtCore import QEvent, QSignalBlocker, Signal, Slot
 from qtpy.QtGui import QCloseEvent
 from qtpy.QtWidgets import (
     QApplication,
@@ -189,11 +189,18 @@ class LocalizationWidget(QWidget):
         self.exclude_edges = QCheckBox("Exclude centroids on volume edges")
         self.exclude_edges.setChecked(defaults.exclude_edge_centroids)
         self.exclude_edges.setToolTip(
-            "Exclude the outermost Z/Y/X voxel planes (Y/X in 2D) from priors, fits, and batch "
-            "processing. Preview again to apply; enhancement is reused."
+            "Exclude an edge band along Z/Y/X (Y/X in 2D) from priors, fits, and batch "
+            "processing. Changes update existing priors using cached enhancement."
         )
-        self.exclude_edges.toggled.connect(self._invalidate_detection)
+        self.edge_margin = QSpinBox()
+        self.edge_margin.setRange(1, 1_000_000)
+        self.edge_margin.setValue(defaults.edge_margin_px)
+        self.edge_margin.setEnabled(defaults.exclude_edge_centroids)
+        self.exclude_edges.toggled.connect(self.edge_margin.setEnabled)
+        self.exclude_edges.toggled.connect(self._edge_filter_changed)
+        self.edge_margin.valueChanged.connect(self._edge_filter_changed)
         form.addRow(self.exclude_edges)
+        form.addRow("Edge margin (voxels)", self.edge_margin)
         self.weights = QLineEdit(defaults.ufish_weights)
         self.weights.textChanged.connect(self._invalidate_detection)
         form.addRow("Weights file / model name", self.weights)
@@ -463,6 +470,12 @@ class LocalizationWidget(QWidget):
         self._revision += 1
         self._detection = None
 
+    def _edge_filter_changed(self, *args: object) -> None:
+        """Refresh existing priors through the shared detector's cached enhancement."""
+        self._invalidate_detection()
+        if self._preview is not None and not self._busy and not self._closing:
+            self.run_detection()
+
     def current_config(self) -> LocalizationConfig:
         """Snapshot and validate all controls before starting any worker or export."""
         if self._layer is None:
@@ -498,6 +511,7 @@ class LocalizationWidget(QWidget):
             blend_3d=self.blend.isChecked(),
             intensity_threshold=self.threshold.value(),
             exclude_edge_centroids=self.exclude_edges.isChecked(),
+            edge_margin_px=self.edge_margin.value(),
             ufish_weights=self.weights.text().strip(),
             inference_batch_size=self.inference_batch.value(),
             fit_parameters=parameters,
@@ -822,7 +836,10 @@ class LocalizationWidget(QWidget):
         self.path.setText(config.input_uri)
         self.blend.setChecked(config.blend_3d)
         self.threshold.setValue(config.intensity_threshold)
-        self.exclude_edges.setChecked(config.exclude_edge_centroids)
+        with QSignalBlocker(self.exclude_edges), QSignalBlocker(self.edge_margin):
+            self.exclude_edges.setChecked(config.exclude_edge_centroids)
+            self.edge_margin.setValue(config.edge_margin_px)
+        self.edge_margin.setEnabled(config.exclude_edge_centroids)
         self.weights.setText(config.ufish_weights)
         self.inference_batch.setValue(config.inference_batch_size)
         self.manual.setChecked(True)

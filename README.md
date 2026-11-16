@@ -27,7 +27,8 @@ Open **Plugins → QI2lab Localization**.
    or 3D volume.
 3. Preview U-FISH priors and adjust `blend_3d` and the intensity threshold.
    Enable **Exclude centroids on volume edges** to omit edge artifacts from
-   previews, fits, and batch processing.
+   previews, fits, and batch processing. The margin defaults to two voxels;
+   adjust **Edge margin** to widen it. Existing priors update automatically.
 4. Set fit bounds, initial values, fixed parameters, and solver options, then
    preview Gaussian fits. Positions and widths use µm; center settings are
    offsets from each prior.
