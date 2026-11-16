@@ -59,7 +59,7 @@ required-environments = [
 packages = ["src/napari_localize_psf"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "docs", "examples", "environments/napari/pyproject.toml", "environments/napari/uv.lock", "pyproject.toml", "uv.lock", "README.md", "AGENTS.md"]
+include = ["src", "tests", "docs", "examples", "pyproject.toml", "uv.lock", "README.md", "AGENTS.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

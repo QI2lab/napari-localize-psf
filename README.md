@@ -39,8 +39,10 @@ configuration is available in [localization.json](examples/localization.json).
 ## Contributing
 
 Run unit and integration tests with
-`uv run --project environments/napari --locked pytest` from a graphical session
+`uv run --locked --group test pytest` from a graphical session
 with the NVIDIA GPU available.
+
+GitHub Actions runs unit and non-GPU integration tests on Linux and Windows.
 
 [napari]: https://napari.org/
 [localize-psf]: https://github.com/QI2lab/localize-psf/tree/opm-ptv

@@ -51,7 +51,8 @@ processing reproduce the plugin's exported settings.
    integration tests using production code; simulated inputs may use upstream
    PSF models. Require a real GPU. Verify preview/batch parity in 2D/3D,
    nonzero origins, T/C selection, bounded/fixed parameters, empty detections,
-   checkpoint invalidation, and configuration round trips. Update both locks
-   after the shared API is available and rerun both repositories' required tests.
+   checkpoint invalidation, and configuration round trips. Update both
+   repositories' lockfiles after the shared API is available and rerun their
+   required tests.
    Keep solver, CUDA kernel, ABI, and installation validation in the upstream
    packages; plugin tests should verify only its own adapters and UI behavior.

@@ -7,10 +7,10 @@
 - Use uv and the locked localize-psf `opm-ptv` GPU and example dependencies.
 - Follow upstream's Python minimum (currently >=3.12) without a plugin-specific
   minor-version ceiling or interpreter pin. User installation targets an existing
-  active napari environment; the separate host project is for local development.
+  active napari environment. Keep development and test dependencies in the root
+  pyproject's dependency groups rather than a separate environment project.
 - Keep napari, Qt/QtPy, npe2, and reader plugins out of the plugin's runtime
-  dependencies. The independent `environments/napari` host provides them;
-  test-only dependency groups may also include them. Preserve the bundled
+  dependencies. The test dependency group may include them. Preserve the bundled
   `napari.yaml` and `napari.manifest` entry point. Do not publish to PyPI.
 - CUDA toolkits and runtime libraries must come from the installed uv environment;
   the NVIDIA driver is the host prerequisite. Never fall back to system CUDA.
