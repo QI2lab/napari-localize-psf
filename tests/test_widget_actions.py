@@ -78,6 +78,8 @@ def test_real_json_dialogs_are_parented_and_roundtrip(
     path = tmp_path / "settings.json"
     assert widget.weights.isEditable() and widget.weights.count() == 11
     assert widget.weights.currentText() == LocalizationConfig().ufish_weights
+    assert not widget.median_filter.isChecked()
+    widget.median_filter.setChecked(True)
     widget.weights.setCurrentText(weights)
     widget.exclude_edges.setChecked(True)
     widget.edge_margin.setValue(3)
@@ -93,6 +95,7 @@ def test_real_json_dialogs_are_parented_and_roundtrip(
     select_real_file(path, widget)
     widget._save_json()
     assert LocalizationConfig.load(path).intensity_threshold == 0.2
+    assert LocalizationConfig.load(path).ufish_median_filter
     assert LocalizationConfig.load(path).ufish_weights == weights
     assert LocalizationConfig.load(path).exclude_edge_centroids
     assert LocalizationConfig.load(path).edge_margin_px == 3
@@ -100,6 +103,7 @@ def test_real_json_dialogs_are_parented_and_roundtrip(
     assert LocalizationConfig.load(path).fit_filters == widget.current_config().fit_filters
     assert LocalizationConfig.load(path).return_covariance
     widget.threshold.setValue(0.7)
+    widget.median_filter.setChecked(False)
     widget.weights.setCurrentText(LocalizationConfig().ufish_weights)
     widget.exclude_edges.setChecked(False)
     widget.edge_margin.setValue(1)
@@ -108,6 +112,7 @@ def test_real_json_dialogs_are_parented_and_roundtrip(
     select_real_file(path, widget)
     widget._load_json()
     assert widget.current_config().intensity_threshold == 0.2
+    assert widget.median_filter.isChecked()
     assert widget.weights.currentText() == weights
     assert widget.weights.count() == 11
     assert widget.exclude_edges.isChecked()
@@ -206,6 +211,7 @@ def test_copy_command_quotes_paths_and_saves_current_settings(
     select_real_file(config_path, widget)
     widget._save_json()
     widget.threshold.setValue(0.65)
+    widget.median_filter.setChecked(True)
     widget.weights.setCurrentIndex(widget.weights.findText("finetune_models/v1.0.1-CISH_model.pth"))
     output = tmp_path / "fit's results & diagnostics"
     widget.output.setText(str(output))
@@ -228,6 +234,7 @@ def test_copy_command_quotes_paths_and_saves_current_settings(
             str(output),
         ]
     assert LocalizationConfig.load(config_path).intensity_threshold == 0.65
+    assert LocalizationConfig.load(config_path).ufish_median_filter
     assert (
         LocalizationConfig.load(config_path).ufish_weights
         == "finetune_models/v1.0.1-CISH_model.pth"

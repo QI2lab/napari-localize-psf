@@ -188,6 +188,15 @@ class LocalizationWidget(QWidget):
         self.blend.setChecked(True)
         self.blend.toggled.connect(self._invalidate_detection)
         form.addRow(self.blend)
+        self.median_filter = QCheckBox("GPU median noise suppression before U-FISH")
+        self.median_filter.setChecked(defaults.ufish_median_filter)
+        self.median_filter.setToolTip(
+            "Apply a 3×3×3 spatial median filter (3×3 in 2D) with reflected borders. "
+            "Timepoints and channels are processed independently. Applies to preview "
+            "and batch detection; Gaussian fits use original image counts."
+        )
+        self.median_filter.toggled.connect(self._invalidate_detection)
+        form.addRow(self.median_filter)
         self.threshold = QDoubleSpinBox()
         self.threshold.setDecimals(5)
         self.threshold.setRange(0, 1e9)
@@ -697,6 +706,7 @@ class LocalizationWidget(QWidget):
             source_layer=self._layer.name,
             fit_model=self.model.currentText(),
             blend_3d=self.blend.isChecked(),
+            ufish_median_filter=self.median_filter.isChecked(),
             intensity_threshold=self.threshold.value(),
             collapse_close_priors=self.collapse_priors.isChecked(),
             exclude_edge_centroids=self.exclude_edges.isChecked(),
@@ -1162,6 +1172,7 @@ class LocalizationWidget(QWidget):
         self.axes.setText(config.preview.axes)
         self.path.setText(config.input_uri)
         self.blend.setChecked(config.blend_3d)
+        self.median_filter.setChecked(config.ufish_median_filter)
         self.threshold.setValue(config.intensity_threshold)
         with (
             QSignalBlocker(self.exclude_edges),

@@ -37,6 +37,7 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, tmp_p
         origin_zyx_um=origin,
         fit_roi_size_um=(1.8, 1.5, 1.5),
         blend_3d=not plane,
+        ufish_median_filter=True,
         return_covariance=True,
         preview=PreviewSettings(
             axes="yx" if geometry == "xy" else "tzyx",
@@ -49,10 +50,21 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, tmp_p
     if geometry == "xy":
         assert widget.model.currentText() == "2d"
     widget.apply_config(config)
+    assert widget.median_filter.isChecked()
     widget.run_detection()
     qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
     assert "U-FISH priors" in viewer.layers, widget.status.text()
     assert widget._detection is not None and len(widget._detection[0]) > 0
+    original_preview = widget._preview
+    filtered_enhancement = widget._detection[1]
+    widget.median_filter.setChecked(False)
+    assert widget._detection is None
+    widget.median_filter.setChecked(True)
+    widget.run_detection()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._preview is original_preview
+    assert widget._detection is not None, widget.status.text()
+    assert widget._detection[1] is filtered_enhancement
     enhanced = viewer.layers["U-FISH enhancement"]
     offset = np.array([3, 4] if geometry == "xy" else [1, 0 if plane else 3, 3, 4])
     np.testing.assert_allclose(
@@ -132,6 +144,7 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, tmp_p
     nearest = np.asarray(fitted.features[["cz", "cy", "cx"]])
     assert np.min(np.linalg.norm(nearest - truth[[3, 2, 1]], axis=1)) < 0.05
     assert fitted.metadata["configuration"]["fit_model"] == config.fit_model
+    assert fitted.metadata["configuration"]["ufish_median_filter"]
     assert fitted.metadata["configuration"]["ufish_weights"] == str(weights)
     if plane:
         np.testing.assert_allclose(fitted.features["cz"], origin[0])
