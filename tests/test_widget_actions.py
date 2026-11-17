@@ -239,7 +239,9 @@ def test_copy_command_quotes_paths_and_saves_current_settings(
     assert not widget.cancel_button.isEnabled()
 
 
-@pytest.mark.parametrize("action", ["_choose_tiff", "_choose_zarr", "_save_json", "_load_json"])
+@pytest.mark.parametrize(
+    "action", ["_choose_tiff", "_choose_zarr", "_save_json", "_load_json", "_choose_results"]
+)
 def test_cancelled_dialog_keeps_current_settings(viewer, qtbot, select_real_file, action):
     viewer.add_image(np.ones((5, 11, 13)), units="um")
     widget = LocalizationWidget(viewer)
@@ -250,6 +252,20 @@ def test_cancelled_dialog_keeps_current_settings(viewer, qtbot, select_real_file
     assert widget.current_config() == before
     assert widget._config_path is None
     assert len(viewer.layers) == 1
+
+
+def test_results_dialog_selects_file_without_opening_an_image(
+    viewer, qtbot, tmp_path, select_real_file
+):
+    widget = LocalizationWidget(viewer)
+    qtbot.addWidget(widget)
+    path = tmp_path / "localizations.parquet"
+    path.touch()
+    select_real_file(path, widget)
+    widget._choose_results()
+    assert widget.results_path.text() == str(path)
+    assert not widget.results_button.isEnabled()
+    assert widget._worker is None and len(viewer.layers) == 0
 
 
 def test_invalid_json_load_reports_error_and_retains_controls(

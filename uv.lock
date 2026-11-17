@@ -1060,8 +1060,8 @@ wheels = [
 
 [[package]]
 name = "localize-psf"
-version = "0.2.8"
-source = { git = "https://github.com/QI2lab/localize-psf.git?branch=opm-ptv#114029a56b47e461b814bdd3eef597a34949dd30" }
+version = "0.2.9"
+source = { git = "https://github.com/QI2lab/localize-psf.git?branch=opm-ptv#ae5723e2ebfdc8fc4c123d354d180af713506e87" }
 dependencies = [
     { name = "joblib" },
     { name = "matplotlib" },
@@ -1442,10 +1442,12 @@ test = [
     { name = "napari-ome-zarr" },
     { name = "napari-tiff" },
     { name = "npe2" },
+    { name = "pyarrow" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-qt" },
     { name = "qtpy" },
+    { name = "typer" },
     { name = "yaozarrs", extra = ["io", "write-tensorstore"] },
 ]
 
@@ -1469,10 +1471,12 @@ test = [
     { name = "napari-ome-zarr", specifier = ">=0.11.0" },
     { name = "napari-tiff", specifier = ">=0.1.6" },
     { name = "npe2", specifier = ">=0.10.2" },
+    { name = "pyarrow", specifier = ">=18" },
     { name = "pytest", specifier = ">=9" },
     { name = "pytest-cov", specifier = ">=7" },
     { name = "pytest-qt", specifier = ">=4.5" },
     { name = "qtpy", specifier = ">=2.4" },
+    { name = "typer", specifier = ">=0.16,<1" },
     { name = "yaozarrs", extras = ["io", "write-tensorstore"], git = "https://github.com/imaging-formats/yaozarrs.git?rev=main" },
 ]
 

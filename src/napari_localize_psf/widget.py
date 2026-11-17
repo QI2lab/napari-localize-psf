@@ -49,6 +49,7 @@ from .data import (
     open_images,
     prepare_image_layers,
     prepare_preview,
+    source_coordinates,
 )
 from .processing import Detector, FitResults, fit_filter_mask, fit_spots, optical_parameters
 from .runtime import package_versions
@@ -57,10 +58,12 @@ if TYPE_CHECKING:
     from napari import Viewer
     from napari.layers import Points
 
+type BatchOverlay = tuple[pd.DataFrame, dict[str, object], str, str, int]
 type JobResult = (
     dict[str, tuple[float, float, float]]
     | tuple[Preview, tuple[np.ndarray, np.ndarray]]
     | tuple[Preview, FitResults, LocalizationConfig]
+    | BatchOverlay
 )
 
 _SOURCE_EVENTS = ("data", "scale", "translate", "affine", "rotate", "shear", "units", "axis_labels")
@@ -96,10 +99,12 @@ class LocalizationWidget(QWidget):
         layout = QVBoxLayout(self)
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
-        data_page, prior_page, fit_page, filter_page, export_page = (QWidget() for _ in range(5))
+        data_page, prior_page, fit_page, filter_page, export_page, results_page = (
+            QWidget() for _ in range(6)
+        )
         for page, title in zip(
-            (data_page, prior_page, fit_page, filter_page, export_page),
-            ("Data", "U-FISH", "Fits", "Fit filters", "Export / batch"),
+            (data_page, prior_page, fit_page, filter_page, export_page, results_page),
+            ("Data", "U-FISH", "Fits", "Fit filters", "Export / batch", "Batch results"),
             strict=True,
         ):
             scroll = QScrollArea()
@@ -394,6 +399,40 @@ class LocalizationWidget(QWidget):
             "PowerShell command" if sys.platform == "win32" else "Shell command", self.command_view
         )
 
+        form = QFormLayout(results_page)
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self.results_path = QLineEdit()
+        self.results_path.setPlaceholderText("Batch output directory or localizations.parquet")
+        form.addRow("Saved results", self.results_path)
+        button = QPushButton("Choose results")
+        button.clicked.connect(self._choose_results)
+        form.addRow(button)
+        self.results_all_timepoints = QCheckBox("All timepoints")
+        self.results_all_timepoints.setChecked(True)
+        self.results_timepoint = QSpinBox()
+        self.results_timepoint.setRange(0, 1_000_000)
+        form.addRow(self.results_all_timepoints)
+        form.addRow("Timepoint", self.results_timepoint)
+        self.results_all_channels = QCheckBox("All channels")
+        self.results_all_channels.setChecked(True)
+        self.results_channel = QSpinBox()
+        self.results_channel.setRange(0, 1_000_000)
+        form.addRow(self.results_all_channels)
+        form.addRow("Channel", self.results_channel)
+        note = QLabel(
+            "Overlay saved Gaussian fits on the image selected in Data. "
+            "Timepoints and channels are zero-based. Saved batch filters are preserved. "
+            "Fit parameters and diagnostics are available in the points features table."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+        self.results_button = QPushButton("Load / refresh overlay")
+        self.results_button.clicked.connect(self.load_batch_results)
+        form.addRow(self.results_button)
+        self.results_status = QLabel()
+        self.results_status.setWordWrap(True)
+        form.addRow(self.results_status)
+
         self.status = QLabel("Select data, verify calibration, then preview U-FISH priors.")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -402,12 +441,19 @@ class LocalizationWidget(QWidget):
         self.cancel_button.clicked.connect(self.cancel)
         layout.addWidget(self.cancel_button)
         self.progress.connect(self.status.setText)
+        self.output.textChanged.connect(self.results_path.setText)
+        self.results_path.textChanged.connect(self._results_available)
+        self.results_all_timepoints.toggled.connect(self._results_available)
+        self.results_all_channels.toggled.connect(self._results_available)
+        self.tabs.currentChanged.connect(self._results_available)
+        self.axes.editingFinished.connect(self._results_available)
         self.viewer.layers.events.inserted.connect(self._refresh_layers)
         self.viewer.layers.events.removed.connect(self._refresh_layers)
         self._refresh_layers()
         self._model_changed()
         self.indices["channel"].valueChanged.connect(self._channel_changed)
         self.destroyed.connect(self._cancelled.set)
+        self._results_available()
 
     def _refresh_layers(self, *args: object) -> None:
         """Keep source selection stable when result layers are added."""
@@ -441,6 +487,7 @@ class LocalizationWidget(QWidget):
         self._layer = self.layers.currentData()
         if self._layer is None:
             self._invalidate_data()
+            self._results_available()
             return
         layer = self._layer
         self._source_error = None
@@ -472,6 +519,7 @@ class LocalizationWidget(QWidget):
         for name in _SOURCE_EVENTS:
             getattr(layer.events, name).connect(self._source_changed)
         self._refresh_geometry()
+        self._results_available()
 
     def _source_changed(self, *args: object) -> None:
         """Invalidate cached data and calibration after edits to the source layer."""
@@ -686,7 +734,7 @@ class LocalizationWidget(QWidget):
         )
 
     def _start(self, function: Callable[[], JobResult], kind: str) -> None:
-        """Serialize GPU operations; Qt result handling always happens on the GUI thread."""
+        """Serialize background operations; publish results on the GUI thread."""
         if self._busy or self._closing:
             return
         self._busy, self._job_kind, self._job_revision = True, kind, self._revision
@@ -715,6 +763,114 @@ class LocalizationWidget(QWidget):
             return selected, self.detector.detect(selected[0], config)
 
         self._start(compute, "U-FISH")
+
+    def _choose_results(self) -> None:
+        """Choose an existing upstream localization table through a parented dialog."""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open batch localizations",
+            self.results_path.text(),
+            "Localizations (*.parquet)",
+        )
+        if path:
+            self.results_path.setText(path)
+
+    def _results_available(self, *args: object) -> Path | None:
+        """Resolve the output file and limit overlay scope to the selected image axes."""
+        layer = self._layer
+        if layer is not None:
+            axes = self.axes.text().strip().lower()
+            shape = (layer.data[0] if layer.multiscale else layer.data).shape
+            channel = layer.metadata.get("napari_localize_psf", {}).get("source_channel")
+            for axis, all_box, selector in (
+                ("t", self.results_all_timepoints, self.results_timepoint),
+                ("c", self.results_all_channels, self.results_channel),
+            ):
+                present = len(axes) == layer.ndim and axis in axes
+                all_box.setEnabled(present)
+                if not present:
+                    with QSignalBlocker(all_box):
+                        all_box.setChecked(False)
+                selector.setMaximum(shape[axes.index(axis)] - 1 if present else 1_000_000)
+                selector.setEnabled(not all_box.isChecked())
+                if axis == "c" and not present and channel is not None:
+                    selector.setValue(channel)
+                    selector.setEnabled(False)
+        text = self.results_path.text().strip()
+        self.results_button.setEnabled(layer is not None and bool(text))
+        if not text:
+            self.results_status.setText("Choose a batch output directory or localizations.parquet.")
+            return None
+        path = Path(text).expanduser()
+        if path.is_dir():
+            path /= "localizations.parquet"
+        if not path.is_file():
+            self.results_status.setText("Batch localizations are not available yet.")
+            return None
+        if layer is None:
+            self.results_status.setText(
+                "Select the matching image in Data to overlay these results."
+            )
+            return None
+        self.results_status.setText(f"Results available for overlay on {layer.name}.")
+        return path
+
+    def load_batch_results(self) -> None:
+        """Read existing fits on a worker; publication uses the source's pixel transforms.
+
+        Upstream converts physical centers to full-image ZYX pixels using the saved
+        geometry. This adapter adds frame/channel indices in source axis order;
+        preview crops and current fit/filter settings do not affect saved results.
+        """
+        path = self._results_available()
+        if path is None:
+            return
+        try:
+            layer = self._layer
+            assert layer is not None
+            axes = PreviewSettings(axes=self.axes.text().strip().lower()).axes
+            if layer.rgb or len(axes) != layer.ndim:
+                raise ValueError("Select a scalar image with an explicit, matching axis order")
+            timepoint = (
+                None if self.results_all_timepoints.isChecked() else self.results_timepoint.value()
+            )
+            channel = (
+                None if self.results_all_channels.isChecked() else self.results_channel.value()
+            )
+            source_uri = layer.metadata.get("napari_localize_psf", {}).get(
+                "input_uri", layer.source.path or ""
+            )
+        except Exception as error:
+            self.results_status.setText(str(error))
+            self._errored(error)
+            return
+
+        def compute() -> BatchOverlay:
+            from localize_psf.workflow import read_localizations
+
+            features, metadata = read_localizations(path, timepoint=timepoint, channel=channel)
+            saved_uri = metadata.get("input_uri", "")
+            if source_uri and saved_uri:
+                source = (
+                    source_uri.rstrip("/")
+                    if "://" in source_uri
+                    else str(Path(source_uri).resolve())
+                )
+                saved = (
+                    saved_uri.rstrip("/") if "://" in saved_uri else str(Path(saved_uri).resolve())
+                )
+                if source != saved:
+                    raise ValueError("Select the batch results' matching input image in Data")
+            finite = np.isfinite(features[["z", "y", "x"]].to_numpy()).all(axis=1)
+            return (
+                features.loc[finite].reset_index(drop=True),
+                metadata,
+                str(path),
+                axes,
+                int((~finite).sum()),
+            )
+
+        self._start(compute, "Batch results")
 
     def run_fitting(self) -> None:
         """Fit only candidate priors produced for the current input and detector controls."""
@@ -815,6 +971,28 @@ class LocalizationWidget(QWidget):
                 metadata={"localization_output": True},
             )
             self.status.setText(f"{len(points)} U-FISH priors. Tune threshold or preview GPU fits.")
+        elif self._job_kind == "Batch results":
+            features, metadata, path, axes, skipped = cast(BatchOverlay, value)
+            points = source_coordinates(
+                features[["z", "y", "x"]].to_numpy(),
+                axes,
+                timepoints=features["frame"].to_numpy(),
+                channels=features["channel"].to_numpy(),
+            )
+            overlay = self._replace_points(
+                f"Batch localizations: {layer.name}", points, transforms, features
+            )
+            overlay.metadata = {
+                **overlay.metadata,
+                "configuration": metadata,
+                "batch_results_path": path,
+                "source_layer": layer.name,
+            }
+            text = f"Showing {len(points)} batch localizations on {layer.name}."
+            if skipped:
+                text += f" Skipped {skipped} nonfinite fitted centers."
+            self.results_status.setText(text)
+            self.status.setText(text)
         elif self._job_kind == "GPUfit":
             preview, result, config = cast(tuple[Preview, FitResults, LocalizationConfig], value)
             parameters = result["fit_params"]
@@ -870,11 +1048,13 @@ class LocalizationWidget(QWidget):
 
     @Slot(object)
     def _errored(self, error: Exception) -> None:
-        """Surface validation/worker failures without replacing GPU work with CPU work."""
+        """Surface validation and worker failures through Qt notifications."""
         if self._closing:
             return
         text = str(error) or type(error).__name__
         self.status.setText(text)
+        if self._busy and self._job_kind == "Batch results":
+            self.results_status.setText(text)
         if not isinstance(error, CancelledError):
             show_error(text)
 
@@ -896,7 +1076,7 @@ class LocalizationWidget(QWidget):
         self._cancelled.set()
         if self._worker is not None:
             self._worker.quit()
-        self.status.setText("Cancel requested; waiting for the current inference / fit batch.")
+        self.status.setText("Cancel requested; waiting for the current operation.")
 
     def _apply_optics(self) -> None:
         try:

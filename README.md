@@ -42,6 +42,9 @@ Open **Plugins → QI2lab Localization**.
    pass/fail. Filters update the overlay and are saved for batch exports.
 5. Save the JSON settings. Choose an output directory and select **Copy batch
    command** to copy a command for your terminal.
+6. Once batch fits are available, use **Batch results** to overlay
+   `localizations.parquet` on the selected image. Choose all timepoints/channels
+   or a single selection, then select **Load / refresh overlay**.
 
 Export writes only the JSON settings. Preview and batch execution call the
 shared localize-psf workflow. An example configuration is available in

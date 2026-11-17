@@ -21,6 +21,28 @@ if TYPE_CHECKING:
 type Preview = tuple[np.ndarray, tuple[float, float, float], LocalizationConfig]
 
 
+def source_coordinates(
+    points_zyx_px: NDArray[np.floating],
+    axes: str,
+    *,
+    timepoints: int | NDArray[np.integer] = 0,
+    channels: int | NDArray[np.integer] = 0,
+) -> NDArray[np.float64]:
+    """Order full-image ZYX pixels and zero-based T/C indices for a source layer.
+
+    ``axes`` supplies its unique t/c/z/y/x labels. T/C inputs are scalar indices
+    or arrays matching the points. Source scale, units and global transforms
+    stay on the layer and must be copied to the corresponding points overlay.
+    """
+    points = np.asarray(points_zyx_px, dtype=float)
+    columns = {
+        "t": np.broadcast_to(timepoints, (len(points),)),
+        "c": np.broadcast_to(channels, (len(points),)),
+        **dict(zip("zyx", points.T, strict=True)),
+    }
+    return np.column_stack([columns[axis] for axis in axes])
+
+
 def layer_coordinates(
     points_zyx_px: NDArray[np.floating], config: LocalizationConfig
 ) -> NDArray[np.float64]:
@@ -30,12 +52,9 @@ def layer_coordinates(
     if config.fit_model == "2d" and "z" in selection.axes:
         offsets[0] = selection.z_plane
     points = np.asarray(points_zyx_px, dtype=float) + offsets
-    columns = {
-        "t": np.full(len(points), selection.timepoint),
-        "c": np.full(len(points), selection.channel),
-        **dict(zip("zyx", points.T, strict=True)),
-    }
-    return np.column_stack([columns[axis] for axis in selection.axes])
+    return source_coordinates(
+        points, selection.axes, timepoints=selection.timepoint, channels=selection.channel
+    )
 
 
 def open_images(viewer: Viewer, path: str) -> list[Image]:

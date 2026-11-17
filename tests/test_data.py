@@ -6,9 +6,23 @@ import pytest
 from napari.layers import Image
 
 from napari_localize_psf.config import LocalizationConfig, PreviewSettings
-from napari_localize_psf.data import layer_calibration, layer_coordinates, prepare_preview
+from napari_localize_psf.data import (
+    layer_calibration,
+    layer_coordinates,
+    prepare_preview,
+    source_coordinates,
+)
 
 pytestmark = pytest.mark.unit
+
+
+def test_source_coordinates_keep_per_point_time_and_channel_indices():
+    points = np.array([[1.2, 3.4, 5.6], [7.8, 9.0, 10.1]])
+    actual = source_coordinates(
+        points, "ctxyz", timepoints=np.array([3, 7]), channels=np.array([1, 2])
+    )
+    np.testing.assert_allclose(actual, [[1, 3, 5.6, 3.4, 1.2], [2, 7, 10.1, 9, 7.8]])
+    assert source_coordinates(np.empty((0, 3)), "tzyx").shape == (0, 4)
 
 
 def test_nanometer_calibration_and_permuted_cropped_coordinates():
