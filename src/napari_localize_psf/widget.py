@@ -189,11 +189,11 @@ class LocalizationWidget(QWidget):
         self.threshold.setValue(0.2)
         self.threshold.valueChanged.connect(self._invalidate_detection)
         form.addRow("Intensity threshold", self.threshold)
-        self.collapse_priors = QCheckBox("Collapse nearby priors and fits (2 × PSF FWHM)")
+        self.collapse_priors = QCheckBox("Collapse nearby priors and fits")
         self.collapse_priors.setChecked(defaults.collapse_close_priors)
         self.collapse_priors.setToolTip(
-            "Keep the strongest U-FISH enhancement peak when separations are within twice "
-            "the nominal Gaussian FWHM axially and radially in XY, using NA, wavelength, "
+            "Keep the strongest U-FISH enhancement peak within the optical PSF width "
+            "axially and radially in XY, using NA, wavelength, "
             "refractive index and voxel calibration. Final fitted centers are also collapsed, "
             "preferring converged fits, valid covariance, then amplitude. Applies to preview "
             "and batch exports."

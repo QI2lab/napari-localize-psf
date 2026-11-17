@@ -30,10 +30,8 @@ Open **Plugins → QI2lab Localization**.
    also includes the general all-data model and nine other fine-tuned checkpoints.
    The selected weights are saved in JSON for batch prediction.
    Preview U-FISH priors and adjust `blend_3d` and the intensity threshold.
-   Nearby priors use localize-psf's existing `filter_nearby_peaks` keep-one policy,
-   prioritizing the strongest peaks within **2 × optical PSF FWHM** axially and
-   radially in XY, using the optical settings in **Fits**.
-   Final fitted centers use the same distance check to remove duplicate localizations.
+   Nearby priors and duplicate fitted centers are merged automatically using
+   the optical settings in **Fits**.
    Enable **Exclude centroids near data edges** to omit edge artifacts from
    previews, fits, and batch processing. The margin defaults to two voxels;
    adjust **Edge margin** to widen it. Existing priors update automatically.
