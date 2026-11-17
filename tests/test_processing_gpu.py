@@ -1,5 +1,7 @@
 """Real CUDA integration tests of production U-FISH and bounded localization."""
 
+import shutil
+
 import numpy as np
 import pytest
 from napari.utils.transforms import Affine
@@ -14,7 +16,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.gpu]
 
 
 @pytest.mark.parametrize("geometry", ["volume", "plane", "xy"])
-def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geometry):
+def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, tmp_path, geometry):
     from napari_localize_psf.widget import LocalizationWidget
 
     plane = geometry != "volume"
@@ -68,6 +70,17 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geome
     np.testing.assert_allclose(
         priors.data_to_world(priors.data[0]), source.data_to_world(priors.data[0])
     )
+    # Switch real weights through the editable dropdown without downloading another model.
+    weights = tmp_path / "custom weights.pth"
+    shutil.copyfile(widget.detector._detector.weight_path, weights)
+    previous_enhancement = widget._detection[1]
+    widget.weights.setCurrentText(str(weights))
+    assert widget._detection is None and not widget._busy
+    widget.run_detection()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._detection is not None, widget.status.text()
+    assert widget.detector._detector.weight_path == str(weights)
+    assert widget._detection[1] is not previous_enhancement
     cached_enhancement = widget._detection[1]
     collapsed = widget._detection[0].copy()
     widget.collapse_priors.setChecked(False)
@@ -119,6 +132,7 @@ def test_async_dock_detection_fitting_and_overlay_alignment(viewer, qtbot, geome
     nearest = np.asarray(fitted.features[["cz", "cy", "cx"]])
     assert np.min(np.linalg.norm(nearest - truth[[3, 2, 1]], axis=1)) < 0.05
     assert fitted.metadata["configuration"]["fit_model"] == config.fit_model
+    assert fitted.metadata["configuration"]["ufish_weights"] == str(weights)
     if plane:
         np.testing.assert_allclose(fitted.features["cz"], origin[0])
         np.testing.assert_allclose(fitted.features["sz"], 1)

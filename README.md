@@ -25,11 +25,16 @@ Open **Plugins → QI2lab Localization**.
 1. Open an OME-TIFF or OME-Zarr dataset, or select an existing image layer.
 2. Confirm the axes, physical calibration, and preview region. Choose a 2D plane
    or 3D volume.
-3. Preview U-FISH priors and adjust `blend_3d` and the intensity threshold.
-   Nearby priors collapse to the strongest peak within **2 × optical PSF FWHM**
-   along each spatial axis, using the optical settings in **Fits**.
+3. Select a pretrained checkpoint from **U-FISH model**, or type a custom
+   weights path into the same dropdown. SimFISH remains the default; the list
+   also includes the general all-data model and nine other fine-tuned checkpoints.
+   The selected weights are saved in JSON for batch prediction.
+   Preview U-FISH priors and adjust `blend_3d` and the intensity threshold.
+   Nearby priors use localize-psf's existing `filter_nearby_peaks` keep-one policy,
+   prioritizing the strongest peaks within **2 × optical PSF FWHM** axially and
+   radially in XY, using the optical settings in **Fits**.
    Final fitted centers use the same distance check to remove duplicate localizations.
-   Enable **Exclude centroids on volume edges** to omit edge artifacts from
+   Enable **Exclude centroids near data edges** to omit edge artifacts from
    previews, fits, and batch processing. The margin defaults to two voxels;
    adjust **Edge margin** to widen it. Existing priors update automatically.
 4. Set fit bounds, initial values, fixed parameters, and solver options, then

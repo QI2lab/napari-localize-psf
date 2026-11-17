@@ -216,9 +216,34 @@ class LocalizationWidget(QWidget):
         self.edge_margin.valueChanged.connect(self._prior_policy_changed)
         form.addRow(self.exclude_edges)
         form.addRow("Edge margin (voxels)", self.edge_margin)
-        self.weights = QLineEdit(defaults.ufish_weights)
-        self.weights.textChanged.connect(self._invalidate_detection)
-        form.addRow("Weights file / model name", self.weights)
+        self.weights = QComboBox()
+        self.weights.setEditable(True)
+        self.weights.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.weights.addItem("v1.0-alldata-ufish_c32.pth")
+        self.weights.addItems(
+            [
+                f"finetune_models/v1.0.1-{name}_model.pth"
+                for name in (
+                    "simfish",
+                    "deepspot",
+                    "deepblink",
+                    "seqFISH",
+                    "MERFISH",
+                    "ExSeq",
+                    "RCA",
+                    "DNAFISH",
+                    "suntag",
+                    "CISH",
+                )
+            ]
+        )
+        self.weights.setCurrentText(defaults.ufish_weights)
+        self.weights.setToolTip(
+            "Select published U-FISH weights or enter a custom checkpoint path. "
+            "The selected value is saved in JSON for preview and batch prediction."
+        )
+        self.weights.currentTextChanged.connect(self._invalidate_detection)
+        form.addRow("U-FISH model", self.weights)
         self.inference_batch = QSpinBox()
         self.inference_batch.setRange(1, 4096)
         self.inference_batch.setValue(defaults.inference_batch_size)
@@ -628,7 +653,7 @@ class LocalizationWidget(QWidget):
             collapse_close_priors=self.collapse_priors.isChecked(),
             exclude_edge_centroids=self.exclude_edges.isChecked(),
             edge_margin_px=self.edge_margin.value(),
-            ufish_weights=self.weights.text().strip(),
+            ufish_weights=self.weights.currentText().strip(),
             inference_batch_size=self.inference_batch.value(),
             fit_parameters=parameters,
             fit_roi_size_um=tuple(float(self.geometry.item(i, 4).text()) for i in range(3)),
@@ -967,7 +992,7 @@ class LocalizationWidget(QWidget):
             self.edge_margin.setValue(config.edge_margin_px)
             self.collapse_priors.setChecked(config.collapse_close_priors)
         self.edge_margin.setEnabled(config.exclude_edge_centroids)
-        self.weights.setText(config.ufish_weights)
+        self.weights.setCurrentText(config.ufish_weights)
         self.inference_batch.setValue(config.inference_batch_size)
         self.manual.setChecked(True)
         for key in ("timepoint", "channel", "z_plane"):
