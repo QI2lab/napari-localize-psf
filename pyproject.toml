@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
 dependencies = [
-    "localize-psf[gpu,example]>=0.2.6",
+    "localize-psf[gpu,example]>=0.2.7",
     "numpy>=2",
     "ome-zarr>=0.20.1",
     "pandas",
