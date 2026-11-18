@@ -46,6 +46,7 @@ from .data import (
     Preview,
     layer_calibration,
     layer_coordinates,
+    layer_frame_interval,
     open_images,
     prepare_image_layers,
     prepare_preview,
@@ -487,6 +488,15 @@ class LocalizationWidget(QWidget):
         self.tracking_dimensions = QComboBox()
         self.tracking_dimensions.addItems(["3d", "2d"])
         form.addRow("Link positions", self.tracking_dimensions)
+        self.tracking_frame_interval = QDoubleSpinBox()
+        self.tracking_frame_interval.setDecimals(9)
+        self.tracking_frame_interval.setRange(0, 1e9)
+        self.tracking_frame_interval.setSpecialValueText("Unknown (frame lags)")
+        self.tracking_frame_interval.setToolTip(
+            "Read from the image's time calibration when available. Override in seconds "
+            "if needed; zero keeps analysis lags in frames without assuming a frame rate."
+        )
+        form.addRow("Frame interval (s)", self.tracking_frame_interval)
         self.tracking_ranges: dict[str, QDoubleSpinBox] = {}
         for axis in "zyx":
             box = QDoubleSpinBox()
@@ -537,8 +547,9 @@ class LocalizationWidget(QWidget):
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         note = QLabel(
             "Run the Tune settings over every saved frame in the selected channel(s). "
-            "Tracking runs here on a background CPU worker. Save tracks.parquet and "
-            "tracking.json beside the localizations, then overlay trajectories on "
+            "Tracking runs here on a background CPU worker. Save tracks.parquet, "
+            "tracking.json, step distributions and individual/ensemble MSD Parquet "
+            "analyses beside the localizations, then overlay trajectories on "
             "the full image. Use the Tracks layer's head/tail controls to change visibility."
         )
         note.setWordWrap(True)
@@ -657,6 +668,7 @@ class LocalizationWidget(QWidget):
             self.calibration_status.setText(self._source_error)
             return
         axes = self.axes.text().lower().strip()
+        self.tracking_frame_interval.setValue(layer_frame_interval(layer, axes) or 0)
         if len(axes) != layer.ndim or len(set(axes)) != len(axes):
             self.calibration_status.setText("Enter one unique axis label per image dimension.")
             self._calibrated = False
@@ -1040,6 +1052,7 @@ class LocalizationWidget(QWidget):
                 adaptive_stop_um=self.tracking_adaptive_stop.value() or None,
                 input_uri=source_uri,
                 save=scope == "full",
+                frame_interval_s=self.tracking_frame_interval.value() or None,
             )
         except Exception as error:
             self.tracking_status.setText(str(error))
@@ -1213,6 +1226,8 @@ class LocalizationWidget(QWidget):
                 self.tracking_memory.setValue(settings["memory"])
                 self.tracking_min_length.setValue(settings["min_length"])
                 self.tracking_converged.setChecked(settings["converged_only"])
+                if "frame_interval_s" in settings:
+                    self.tracking_frame_interval.setValue(settings["frame_interval_s"] or 0)
                 self.tracking_adaptive_stop.setValue(settings["adaptive_stop_um"] or 0)
                 self.tracking_all_channels.setChecked(settings["channel"] is None)
                 if settings["channel"] is not None:
@@ -1249,7 +1264,9 @@ class LocalizationWidget(QWidget):
             if skipped:
                 text += f" Skipped {skipped} nonfinite centers."
             if self._job_kind == "Tracking full":
-                text += f" Saved tracks.parquet and tracking.json in {Path(path).parent}."
+                text += (
+                    f" Saved tracks, step distributions and MSD analyses in {Path(path).parent}."
+                )
             target = (
                 self.tracking_preview_status
                 if self._job_kind == "Tracking preview"

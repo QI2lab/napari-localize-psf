@@ -1,9 +1,12 @@
 # Repository instructions
 
 - Configuration, detection, fitting policy, and batch processing belong to localize-psf.
-  Keep this plugin limited to its UI, source-layer adapters, and JSON export.
-- Export only JSON and provide a copyable batch command; never write shell scripts,
-  launch batch processing, or own batch subprocesses from the plugin.
+  Keep this plugin limited to its UI, source-layer adapters, JSON export, and
+  adapters to upstream tracking and motion-analysis packages.
+- Localization settings export only JSON with a copyable batch command; never
+  write shell scripts, launch batch processing, or own batch subprocesses.
+- Full tracking may run Trackpy on CPU and save tracks and motion analyses as
+  Parquet plus tracking metadata as JSON. Reuse upstream scientific algorithms.
 - Resolve only Linux x86-64 and Windows x64, using the same declared GPU stack.
 - Use uv and the locked localize-psf `opm-ptv` GPU and example dependencies.
 - Follow upstream's Python minimum (currently >=3.12) without a plugin-specific

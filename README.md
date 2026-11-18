@@ -84,12 +84,21 @@ already have separate channel layers; tracks use time-first image axes such as
    writing files. Empty frames count toward the allowed missing-frame limit.
 3. In **Run / results**, click **Track all frames and save**. This uses the same
    tuning parameters over every saved frame, runs in a background CPU worker,
-   and writes `tracks.parquet` and `tracking.json` beside the input. **Cancel**
-   stops between linked frames. The original localizations are preserved.
+   and writes tracks, tracking settings and motion-analysis Parquet files beside
+   the input. **Cancel** stops between linking or analysis operations. The original
+   localizations are preserved.
 4. Tracks overlay the full source image with their original frame indices and
    unique particle IDs across channels. Use the native Tracks layer's head/tail
    controls to adjust the displayed trajectory window. **Load saved tracks**
    restores both trajectories and the saved linking parameters.
 
-Linking and trajectory-length filtering call Trackpy directly. Input coordinate
-conversion reuses localize-psf; tracking is implemented only in this plugin.
+Full runs automatically save `step_sizes.parquet` (signed Δz/Δy/Δx and the 3D
+magnitude r), `step_size_distributions.parquet` (marginal histograms),
+`msd_individual.parquet`, and `msd_ensemble.parquet`, separately by channel.
+Steps use adjacent frames; MSD includes all available lags and handles gaps
+through Trackpy. Distances use µm and MSD uses µm². **Frame interval (s)** reads
+the image calibration and can be overridden; unknown timing retains frame lags
+with null seconds. No drift correction is applied.
+
+Linking, motion analysis and trajectory-length filtering call Trackpy directly.
+Input coordinate conversion reuses localize-psf; tracking is implemented only in this plugin.

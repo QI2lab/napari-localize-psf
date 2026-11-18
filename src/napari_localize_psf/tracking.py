@@ -6,11 +6,213 @@ import json
 from collections.abc import Callable
 from concurrent.futures import CancelledError
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from threading import Event
 from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
+
+
+def analyze_tracks(
+    tracks: pd.DataFrame,
+    *,
+    frame_interval_s: float | None = None,
+    cancelled: Event | None = None,
+    progress: Callable[[str], None] | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Adapt Trackpy motion statistics to four analysis Parquet tables.
+
+    Input rows have unique (channel, particle, frame) identities and finite
+    physical ``zum/yum/xum`` positions in µm. Signed components and radial
+    magnitude use ZYX, including Z when linking used an XY search. Planar data
+    have constant Z. Only adjacent-frame observations contribute to step
+    distributions; gaps are never treated as one-frame steps. Marginals use
+    NumPy's Freedman–Diaconis histogram bins and retain raw step samples too.
+
+    Trackpy computes individual MSD components and its N-weighted ensemble MSD
+    independently per channel, through every available frame lag. N is its
+    effective independent measurement count, rather than a count of pairs.
+    Positions remain in µm (mpp=1); squared displacements are in µm². Missing
+    frame calibration leaves lag_time_s null; lag_frames is always available.
+    No drift subtraction or diffusion-model fit is applied.
+    """
+    import trackpy as tp
+
+    if frame_interval_s is not None and (
+        not np.isfinite(frame_interval_s) or frame_interval_s <= 0
+    ):
+        raise ValueError("Frame interval must be a positive finite number of seconds")
+    required = {"channel", "particle", "frame", "zum", "yum", "xum"}
+    if not required <= set(tracks.columns):
+        raise ValueError("Track analysis requires channel, particle, frame and physical Z/Y/X")
+    if tracks.duplicated(["channel", "particle", "frame"]).any():
+        raise ValueError("Each particle must have at most one observation per frame and channel")
+    step_types = dict(
+        channel="int64",
+        particle="int64",
+        frame_start="int64",
+        frame_end="int64",
+        lag_frames="int64",
+        lag_time_s="float64",
+        dz_um="float64",
+        dy_um="float64",
+        dx_um="float64",
+        r_um="float64",
+    )
+    msd_types = dict(
+        channel="int64",
+        lag_frames="int64",
+        lag_time_s="float64",
+        mean_dz_um="float64",
+        mean_dy_um="float64",
+        mean_dx_um="float64",
+        msd_z_um2="float64",
+        msd_y_um2="float64",
+        msd_x_um2="float64",
+        msd_r_um2="float64",
+        n_effective="float64",
+    )
+    histogram_types = dict(
+        channel="int64",
+        component="string",
+        bin_left_um="float64",
+        bin_right_um="float64",
+        count="int64",
+        n_steps="int64",
+        probability="float64",
+        density_per_um="float64",
+    )
+    schemas = {
+        "step_sizes.parquet": step_types,
+        "step_size_distributions.parquet": histogram_types,
+        "msd_individual.parquet": {"particle": "int64", **msd_types},
+        "msd_ensemble.parquet": msd_types,
+    }
+    collected: dict[str, list[pd.DataFrame]] = {name: [] for name in schemas}
+    renamed = {
+        **{f"<{axis}>": f"mean_d{axis}_um" for axis in "zyx"},
+        **{f"<{axis}^2>": f"msd_{axis}_um2" for axis in "zyx"},
+        "msd": "msd_r_um2",
+        "N": "n_effective",
+        "lagt": "lag_time_s",
+    }
+    fps = 1.0 if frame_interval_s is None else 1.0 / frame_interval_s
+    for channel, rows in tracks.groupby("channel", sort=True):
+        if cancelled is not None and cancelled.is_set():
+            raise CancelledError("Track analysis cancelled")
+        if progress is not None:
+            progress(f"Analyzing step sizes for channel {channel}")
+        positions = (
+            rows[["particle", "frame", "zum", "yum", "xum"]]
+            .rename(columns={"zum": "z", "yum": "y", "xum": "x"})
+            .sort_values(["particle", "frame"], kind="stable")
+        )
+        previous, previous_frame = None, None
+        for frame, current in positions.groupby("frame", sort=True):
+            if cancelled is not None and cancelled.is_set():
+                raise CancelledError("Track analysis cancelled")
+            if previous is not None and frame == previous_frame + 1:
+                related = tp.relate_frames(
+                    pd.concat((previous, current)),
+                    previous_frame,
+                    frame,
+                    pos_columns=["z", "y", "x"],
+                ).dropna(subset=["dz", "dy", "dx"])
+                steps = (
+                    related[["dz", "dy", "dx", "dr"]]
+                    .rename(columns={"dz": "dz_um", "dy": "dy_um", "dx": "dx_um", "dr": "r_um"})
+                    .reset_index()
+                )
+                if len(steps):
+                    collected["step_sizes.parquet"].append(
+                        steps.assign(
+                            channel=channel,
+                            frame_start=previous_frame,
+                            frame_end=frame,
+                            lag_frames=1,
+                            lag_time_s=frame_interval_s if frame_interval_s is not None else np.nan,
+                        )
+                    )
+            previous, previous_frame = current, frame
+        groups = positions.groupby("particle", sort=True)
+        eligible = []
+        for index, (particle, trajectory) in enumerate(groups, 1):
+            if cancelled is not None and cancelled.is_set():
+                raise CancelledError("Track analysis cancelled")
+            if len(trajectory) < 2:
+                continue
+            if progress is not None and (index % 100 == 0 or index == len(groups)):
+                progress(f"Individual MSD, channel {channel}: track {index} / {len(groups)}")
+            result = tp.msd(
+                trajectory,
+                mpp=1,
+                fps=fps,
+                max_lagtime=int(trajectory["frame"].max() - trajectory["frame"].min()),
+                detail=True,
+                pos_columns=["z", "y", "x"],
+            ).rename(columns=renamed)
+            result.index.name = "lag_frames"
+            if frame_interval_s is None:
+                result["lag_time_s"] = np.nan
+            collected["msd_individual.parquet"].append(
+                result.reset_index().assign(channel=channel, particle=particle)
+            )
+            eligible.append(trajectory)
+        if eligible:
+            if progress is not None:
+                progress(f"Ensemble MSD for channel {channel}")
+            if cancelled is not None and cancelled.is_set():
+                raise CancelledError("Track analysis cancelled")
+            ensemble = tp.emsd(
+                pd.concat(eligible),
+                mpp=1,
+                fps=fps,
+                max_lagtime=int(positions["frame"].max() - positions["frame"].min()),
+                detail=True,
+                pos_columns=["z", "y", "x"],
+            ).rename(columns=renamed)
+            ensemble.index.name = "lag_frames"
+            if frame_interval_s is None:
+                ensemble["lag_time_s"] = np.nan
+            collected["msd_ensemble.parquet"].append(ensemble.reset_index().assign(channel=channel))
+    step_samples = collected["step_sizes.parquet"]
+    if step_samples:
+        for channel, steps in pd.concat(step_samples, ignore_index=True).groupby(
+            "channel", sort=True
+        ):
+            for component, column in (
+                ("r", "r_um"),
+                ("z", "dz_um"),
+                ("y", "dy_um"),
+                ("x", "dx_um"),
+            ):
+                if cancelled is not None and cancelled.is_set():
+                    raise CancelledError("Track analysis cancelled")
+                values = steps[column].to_numpy()
+                counts, edges = np.histogram(values, bins="fd")
+                collected["step_size_distributions.parquet"].append(
+                    pd.DataFrame(
+                        dict(
+                            channel=channel,
+                            component=component,
+                            bin_left_um=edges[:-1],
+                            bin_right_um=edges[1:],
+                            count=counts,
+                            n_steps=len(values),
+                            probability=counts / len(values),
+                            density_per_um=counts / (len(values) * np.diff(edges)),
+                        )
+                    )
+                )
+    if cancelled is not None and cancelled.is_set():
+        raise CancelledError("Track analysis cancelled")
+    return {
+        name: pd.concat(collected[name], ignore_index=True)[list(types)].astype(types)
+        if collected[name]
+        else pd.DataFrame({column: pd.Series(dtype=dtype) for column, dtype in types.items()})
+        for name, types in schemas.items()
+    }
 
 
 def link_localizations(
@@ -27,6 +229,7 @@ def link_localizations(
     adaptive_stop_um: float | None = None,
     input_uri: str = "",
     save: bool = False,
+    frame_interval_s: float | None = None,
     cancelled: Event | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -42,7 +245,9 @@ def link_localizations(
     counts missing image frames. Particle IDs are unique across channels. Minimum
     length counts detections, using Trackpy's filter_stubs. Cancellation is checked
     between frames and before saving. Full runs may atomically replace tracks.parquet
-    and tracking.json beside the input; tuning runs should leave ``save=False``.
+    and tracking.json beside the input, plus automatic step distributions and
+    individual/ensemble MSD Parquet analyses; tuning runs leave ``save=False``.
+    ``frame_interval_s`` calibrates the analysis lag times; None keeps frame lags.
     Return linked rows plus saved localization metadata and tracking settings.
     """
     import pyarrow.parquet as pq
@@ -56,6 +261,10 @@ def link_localizations(
         raise ValueError("Displacement limits must be three positive finite Z/Y/X distances in µm")
     if memory < 0 or min_length < 1 or dimensions not in {"2d", "3d"}:
         raise ValueError("Use nonnegative memory, positive minimum length, and 2D or 3D tracking")
+    if frame_interval_s is not None and (
+        not np.isfinite(frame_interval_s) or frame_interval_s <= 0
+    ):
+        raise ValueError("Frame interval must be a positive finite number of seconds")
     if any(value is not None and value < 0 for value in (first_frame, last_frame, channel)):
         raise ValueError("Frame and channel indices must be nonnegative")
     if first_frame is not None and last_frame is not None and first_frame > last_frame:
@@ -160,23 +369,52 @@ def link_localizations(
         adaptive_stop_um=adaptive_stop_um,
         skipped_nonfinite=skipped,
         trackpy_version=tp.__version__,
+        frame_interval_s=frame_interval_s,
     )
     metadata = {**metadata, "tracking": settings}
     if cancelled is not None and cancelled.is_set():
         raise CancelledError("Tracking cancelled")
     if save:
-        result_path = source.with_name("tracks.parquet")
-        settings_path = source.with_name("tracking.json")
-        temporary = result_path.with_suffix(".parquet.tmp")
-        settings_temporary = settings_path.with_suffix(".json.tmp")
-        try:
-            tracks.to_parquet(temporary, index=False)
-            settings_temporary.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        import pyarrow as pa
+
+        analyses = analyze_tracks(
+            tracks, frame_interval_s=frame_interval_s, cancelled=cancelled, progress=progress
+        )
+        settings["analysis"] = dict(
+            schema_version=1,
+            files=list(analyses),
+            step_lag_frames=1,
+            radial_definition="sqrt(dz_um**2 + dy_um**2 + dx_um**2)",
+            component_steps="signed",
+            histogram_bins="numpy-fd",
+            ensemble_scope="per_channel",
+            msd_weighting="trackpy-effective-N",
+            max_lag_frames="all_available",
+            position_unit="micrometer",
+            msd_unit="micrometer**2",
+            frame_interval_s=frame_interval_s,
+            drift_subtracted=False,
+            msd_min_observations=2,
+        )
+        encoded = json.dumps(metadata, indent=2).encode("utf-8")
+        with TemporaryDirectory(prefix=".tracking-", dir=source.parent) as staging:
+            directory = Path(staging)
+            for name, frame in {"tracks.parquet": tracks, **analyses}.items():
+                if progress is not None:
+                    progress(f"Saving {name}")
+                if cancelled is not None and cancelled.is_set():
+                    raise CancelledError("Tracking cancelled")
+                table = pa.Table.from_pandas(frame, preserve_index=False)
+                table = table.replace_schema_metadata(
+                    {
+                        **(table.schema.metadata or {}),
+                        b"napari_localize_psf_tracking": encoded,
+                    }
+                )
+                pq.write_table(table, directory / name)
+            (directory / "tracking.json").write_bytes(encoded)
             if cancelled is not None and cancelled.is_set():
                 raise CancelledError("Tracking cancelled")
-            temporary.replace(result_path)
-            settings_temporary.replace(settings_path)
-        finally:
-            temporary.unlink(missing_ok=True)
-            settings_temporary.unlink(missing_ok=True)
+            for staged in directory.iterdir():
+                staged.replace(source.with_name(staged.name))
     return tracks, metadata

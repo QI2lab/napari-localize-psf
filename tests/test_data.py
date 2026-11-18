@@ -9,11 +9,29 @@ from napari_localize_psf.config import LocalizationConfig, PreviewSettings
 from napari_localize_psf.data import (
     layer_calibration,
     layer_coordinates,
+    layer_frame_interval,
     prepare_preview,
     source_coordinates,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_frame_interval_respects_units_transforms_and_missing_calibration():
+    layer = Image(
+        np.ones((3, 5, 7)), axis_labels=tuple("tyx"), scale=(15, 1, 1), units=("ms", "um", "um")
+    )
+    assert layer_frame_interval(layer, "tyx") == pytest.approx(0.015)
+    layer.affine = np.diag([2, 1, 1, 1])
+    assert layer_frame_interval(layer, "tyx") == pytest.approx(0.03)
+    layer.units = ("um", "um", "um")
+    assert layer_frame_interval(layer, "tyx") is None
+    assert layer_frame_interval(layer, "zyx") is None
+    layer.units = ("s", "um", "um")
+    matrix = np.eye(4)
+    matrix[0, 1] = 0.1
+    layer.affine = matrix
+    assert layer_frame_interval(layer, "tyx") is None
 
 
 def test_source_coordinates_keep_per_point_time_and_channel_indices():

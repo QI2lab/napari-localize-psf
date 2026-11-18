@@ -11,6 +11,7 @@ from napari.layers import Image
 from napari.utils.transforms import Affine
 from numpy.typing import NDArray
 from pint import get_application_registry
+from pint.errors import PintError
 
 from .config import LocalizationConfig
 
@@ -122,6 +123,37 @@ def prepare_image_layers(images: list[Image], path: str) -> None:
                 "input_uri": image_uri,
                 "source_channel": channel,
             }
+
+
+def layer_frame_interval(layer: Image, axes: str) -> float | None:
+    """Return a uniform source-frame interval in seconds, or None if uncalibrated.
+
+    Respect the layer's complete transform and time-axis units. A transform
+    mixing spatial coordinates into time cannot supply a uniform frame clock.
+    Missing/non-time units and nonpositive intervals retain frame-based lags.
+    """
+    if len(axes) != layer.ndim or axes.count("t") != 1:
+        return None
+    index = axes.index("t")
+    origin = np.asarray(layer.data_to_world(np.zeros(layer.ndim)))
+    time_row = np.asarray(
+        [
+            np.asarray(layer.data_to_world(vector))[index] - origin[index]
+            for vector in np.eye(layer.ndim)
+        ]
+    )
+    if not np.allclose(np.delete(time_row, index), 0):
+        return None
+    try:
+        seconds = float(
+            get_application_registry()
+            .Quantity(time_row[index], str(layer.units[index]))
+            .to("second")
+            .magnitude
+        )
+    except (PintError, ValueError, TypeError):
+        return None
+    return seconds if np.isfinite(seconds) and seconds > 0 else None
 
 
 def layer_calibration(

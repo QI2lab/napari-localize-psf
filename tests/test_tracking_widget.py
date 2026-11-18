@@ -52,6 +52,8 @@ def test_widget_tunes_executes_saves_and_reloads_tracks(viewer, qtbot, localizat
     assert isinstance(preview, Tracks)
     assert set(preview.features["frame"]) == {1, 2, 3}
     assert not path.with_name("tracks.parquet").exists()
+    assert not path.with_name("msd_individual.parquet").exists()
+    assert widget.tracking_frame_interval.value() == 0.015
     widget.tracking_run_button.click()
     qtbot.waitUntil(lambda: not widget._busy, timeout=30000)
     assert "Tracks: counts" in viewer.layers, widget.status.text()
@@ -66,13 +68,18 @@ def test_widget_tunes_executes_saves_and_reloads_tracks(viewer, qtbot, localizat
     assert path.with_name("tracks.parquet").is_file()
     saved = json.loads(path.with_name("tracking.json").read_text())
     assert saved["tracking"]["first_frame"] is None and saved["tracking"]["last_frame"] is None
+    assert saved["tracking"]["frame_interval_s"] == 0.015
+    for name in saved["tracking"]["analysis"]["files"]:
+        assert path.with_name(name).is_file()
     original = overlay.data.copy()
     viewer.layers.remove(overlay)
     widget.tracking_memory.setValue(0)
+    widget.tracking_frame_interval.setValue(0.5)
     widget.tracking_load_button.click()
     qtbot.waitUntil(lambda: not widget._busy, timeout=10000)
     np.testing.assert_array_equal(viewer.layers["Tracks: counts"].data, original)
     assert widget.tracking_memory.value() == 1
+    assert widget.tracking_frame_interval.value() == 0.015
     before = path.with_name("tracks.parquet").read_bytes()
     widget.tracking_min_length.setValue(100)
     widget.tracking_preview_button.click()

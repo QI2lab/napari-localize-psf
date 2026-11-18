@@ -10,7 +10,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from napari_localize_psf.tracking import link_localizations
+from napari_localize_psf.tracking import analyze_tracks, link_localizations
 
 pytestmark = pytest.mark.integration
 
@@ -35,7 +35,8 @@ def test_real_linking_preserves_units_gaps_channels_and_candidate_ids(
     assert not path.with_name("tracks.parquet").exists()
 
 
-def test_frame_selection_minimum_length_empty_and_saved_results(localizations):
+@pytest.mark.parametrize("frame_interval_s", [None, 0.02])
+def test_frame_selection_minimum_length_empty_and_saved_results(localizations, frame_interval_s):
     path, config = localizations
     preview, metadata = link_localizations(
         path,
@@ -51,17 +52,123 @@ def test_frame_selection_minimum_length_empty_and_saved_results(localizations):
     assert metadata["tracking"]["last_frame"] == 3
     assert not path.with_name("tracking.json").exists()
     tracks, metadata = link_localizations(
-        path, search_range_um=(0.3, 0.3, 0.3), memory=1, channel=1, save=True
+        path,
+        search_range_um=(0.3, 0.3, 0.3),
+        memory=1,
+        channel=1,
+        save=True,
+        frame_interval_s=frame_interval_s,
     )
     pd.testing.assert_frame_equal(pd.read_parquet(path.with_name("tracks.parquet")), tracks)
     assert json.loads(path.with_name("tracking.json").read_text()) == metadata
     assert metadata["origin_zyx_um"] == list(config.origin_zyx_um)
     assert metadata["tracking"]["first_frame"] is None
     assert metadata["tracking"]["channel"] == 1
+    assert metadata["tracking"]["frame_interval_s"] == frame_interval_s
+    analysis = metadata["tracking"]["analysis"]
+    assert len(analysis["files"]) == 4
+    for name in analysis["files"]:
+        schema = pq.read_schema(path.with_name(name))
+        assert json.loads(schema.metadata[b"napari_localize_psf_tracking"]) == metadata
+    steps = pd.read_parquet(path.with_name("step_sizes.parquet"))
+    np.testing.assert_array_equal(steps["frame_start"], np.arange(4))
+    np.testing.assert_allclose(steps["dx_um"], 0.1)
+    np.testing.assert_allclose(steps["r_um"], 0.1)
+    individual = pd.read_parquet(path.with_name("msd_individual.parquet"))
+    ensemble = pd.read_parquet(path.with_name("msd_ensemble.parquet"))
+    for table in (individual, ensemble):
+        np.testing.assert_allclose(table["msd_r_um2"], 0.01 * table["lag_frames"] ** 2, atol=1e-12)
+        if frame_interval_s is None:
+            assert table["lag_time_s"].isna().all()
+        else:
+            np.testing.assert_allclose(table["lag_time_s"], table["lag_frames"] * frame_interval_s)
+    distributions = pd.read_parquet(path.with_name("step_size_distributions.parquet"))
+    assert set(distributions["component"]) == {"r", "z", "y", "x"}
+    assert distributions.groupby("component")["count"].sum().eq(4).all()
+    np.testing.assert_allclose(distributions.groupby("component")["probability"].sum(), 1)
     empty, _ = link_localizations(
         path, search_range_um=(0.3, 0.3, 0.3), first_frame=10, last_frame=12
     )
     assert empty.empty and empty["particle"].dtype == np.int64
+
+
+def test_analysis_keeps_channels_signed_components_gaps_and_all_frame_lags(localizations):
+    path, _ = localizations
+    tracks, _ = link_localizations(path, search_range_um=(0.3, 0.3, 0.3), memory=1)
+    outputs = analyze_tracks(tracks, frame_interval_s=0.015)
+    steps = outputs["step_sizes.parquet"]
+    assert len(steps) == 10
+    assert set(steps["channel"]) == {0, 1}
+    assert steps["frame_end"].sub(steps["frame_start"]).eq(1).all()
+    gapped = tracks.loc[(tracks["channel"] == 0) & tracks["yum"].eq(4), "particle"].iloc[0]
+    assert steps.loc[steps["particle"] == gapped, "frame_start"].tolist() == [0, 3]
+    frames = np.arange(105)
+    # Simulated physical positions are input to the real Trackpy motion functions.
+    motion = pd.DataFrame(
+        {
+            "particle": 7,
+            "channel": 0,
+            "frame": frames,
+            "zum": 0.12 * frames,
+            "yum": -0.04 * frames,
+            "xum": 0.03 * frames,
+        }
+    )
+    opposite = motion.assign(channel=1, zum=-motion["zum"], yum=-motion["yum"], xum=-motion["xum"])
+    outputs = analyze_tracks(
+        pd.concat([motion, opposite], ignore_index=True), frame_interval_s=0.02
+    )
+    samples = outputs["step_sizes.parquet"]
+    for channel, sign in ((0, 1), (1, -1)):
+        selected = samples.loc[samples["channel"] == channel]
+        np.testing.assert_allclose(
+            selected[["dz_um", "dy_um", "dx_um"]],
+            np.tile(sign * np.array([0.12, -0.04, 0.03]), (104, 1)),
+        )
+        np.testing.assert_allclose(selected["r_um"], 0.13)
+    for name in ("msd_individual.parquet", "msd_ensemble.parquet"):
+        table = outputs[name]
+        assert table.groupby("channel")["lag_frames"].max().eq(104).all()
+        np.testing.assert_allclose(
+            table["msd_r_um2"], 0.13**2 * table["lag_frames"] ** 2, atol=1e-10
+        )
+        np.testing.assert_allclose(table["lag_time_s"], 0.02 * table["lag_frames"])
+
+
+@pytest.mark.parametrize("cancel_stage", ["Analyzing", "Saving msd_individual.parquet"])
+def test_empty_analysis_and_cancelled_analysis_preserve_saved_files(localizations, cancel_stage):
+    path, _ = localizations
+    tracks, metadata = link_localizations(
+        path, search_range_um=(0.3, 0.3, 0.3), memory=1, save=True
+    )
+    filenames = ["tracks.parquet", "tracking.json", *metadata["tracking"]["analysis"]["files"]]
+    before = {name: path.with_name(name).read_bytes() for name in filenames}
+    cancelled = Event()
+
+    def cancel_analysis(message):
+        if message.startswith(cancel_stage):
+            cancelled.set()
+
+    with pytest.raises(CancelledError):
+        link_localizations(
+            path,
+            search_range_um=(0.3, 0.3, 0.3),
+            memory=1,
+            save=True,
+            cancelled=cancelled,
+            progress=cancel_analysis,
+        )
+    assert {name: path.with_name(name).read_bytes() for name in filenames} == before
+    assert not list(path.parent.glob(".tracking-*"))
+    singleton = analyze_tracks(tracks.iloc[:1])
+    assert all(table.empty for table in singleton.values())
+    empty, metadata = link_localizations(
+        path, search_range_um=(0.3, 0.3, 0.3), min_length=100, save=True
+    )
+    assert empty.empty
+    for name in metadata["tracking"]["analysis"]["files"]:
+        table = pd.read_parquet(path.with_name(name))
+        assert table.empty and len(table.columns) > 0
 
 
 @pytest.mark.parametrize("dimensions, expected_tracks", [("2d", 1), ("3d", 0)])
@@ -103,6 +210,8 @@ def test_cancellation_and_invalid_settings_do_not_write_results(localizations):
         {"min_length": 0},
         {"adaptive_stop_um": 0.4},
         {"channel": -1},
+        {"frame_interval_s": 0},
+        {"frame_interval_s": float("nan")},
         {"input_uri": str(path.parent / "other.ome.zarr")},
     ):
         with pytest.raises(ValueError):
