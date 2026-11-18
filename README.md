@@ -96,7 +96,8 @@ already have separate channel layers; tracks use time-first image axes such as
 Full runs automatically save `step_sizes.parquet` (signed Δz/Δy/Δx and the 3D
 magnitude r), `step_size_distributions.parquet` (marginal histograms),
 `msd_individual.parquet`, and `msd_ensemble.parquet`, separately by channel.
-`tracking_analysis.pdf` contains one plot per page, with titles and axes only.
+`tracking_analysis.pdf` has six pages per channel: four step-size distributions,
+one ensemble MSD plot, and one plot of all individual MSD curves, with titles and axes only.
 All step-size distributions share the same bin edges and plot limits across channels.
 Steps use adjacent frames; MSD includes all available lags and handles gaps
 through Trackpy. Distances use µm and MSD uses µm². **Frame interval (s)** reads

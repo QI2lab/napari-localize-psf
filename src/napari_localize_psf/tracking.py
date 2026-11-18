@@ -37,6 +37,8 @@ def analyze_tracks(
     Positions remain in µm (mpp=1); squared displacements are in µm². Missing
     frame calibration leaves lag_time_s null; lag_frames is always available.
     No drift subtraction or diffusion-model fit is applied.
+    Physical coordinates are promoted to float64 before Trackpy's arithmetic
+    to avoid cancellation errors from float32 fits with large global origins.
     """
     import trackpy as tp
 
@@ -107,6 +109,7 @@ def analyze_tracks(
         positions = (
             rows[["particle", "frame", "zum", "yum", "xum"]]
             .rename(columns={"zum": "z", "yum": "y", "xum": "x"})
+            .astype({axis: "float64" for axis in "zyx"})
             .sort_values(["particle", "frame"], kind="stable")
         )
         previous, previous_frame = None, None
@@ -228,8 +231,8 @@ def write_analysis_pdf(
 ) -> None:
     """Plot saved analysis values, one titled/labeled axes per PDF page.
 
-    Each channel has r/Z/Y/X marginal, ensemble MSD and individual MSD pages.
-    Individual trajectories share one axes per component. All step pages share
+    Each channel has six pages: r/Z/Y/X marginals, total ensemble MSD and all
+    individual total MSD curves on one axes. All step pages share
     the exported bin edges and identical x/y limits across channels. Distances
     use µm, squared displacements µm², and lag times seconds when calibrated.
     Empty results produce labeled empty plots. No legends or narrative text
@@ -269,8 +272,12 @@ def write_analysis_pdf(
                     if channel is not None
                     else table.iloc[:0]
                 )
-                for component in "rzyx":
-                    title = f"{kind}: {component}{suffix}"
+                for component in "rzyx" if kind == "Step-size distribution" else "r":
+                    title = (
+                        f"{kind}: {component}{suffix}"
+                        if kind == "Step-size distribution"
+                        else f"{kind}{suffix}"
+                    )
                     if progress is not None:
                         progress(f"Writing PDF: {title}")
                     if cancelled is not None and cancelled.is_set():
@@ -333,7 +340,7 @@ def write_analysis_pdf(
                                     marker=".",
                                     markersize=3,
                                 )
-                            axis.set(xlabel=lag_label, ylabel=f"MSD {component} (µm²)")
+                            axis.set(xlabel=lag_label, ylabel="MSD (µm²)")
                         axis.set_title(title)
                         pdf.savefig(figure, dpi=200)
                     finally:
@@ -523,6 +530,9 @@ def link_localizations(
             frame_interval_s=frame_interval_s,
             drift_subtracted=False,
             msd_min_observations=2,
+            motion_coordinate_dtype="float64",
+            report_pages_per_channel=6,
+            report_msd_component="r",
         )
         encoded = json.dumps(metadata, indent=2).encode("utf-8")
         with TemporaryDirectory(prefix=".tracking-", dir=source.parent) as staging:

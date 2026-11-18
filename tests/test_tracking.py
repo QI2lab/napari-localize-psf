@@ -71,11 +71,15 @@ def test_frame_selection_minimum_length_empty_and_saved_results(localizations, f
     analysis = metadata["tracking"]["analysis"]
     assert len(analysis["files"]) == 4
     reader = PdfReader(path.with_name(analysis["report_file"]))
-    assert len(reader.pages) == 12
+    assert len(reader.pages) == 6
     page_index = 0
     for kind in ("Step-size distribution", "Ensemble MSD", "Individual MSDs"):
-        for component in "rzyx":
-            title = f"{kind}: {component} (channel 1)"
+        for component in "rzyx" if kind == "Step-size distribution" else "r":
+            title = (
+                f"{kind}: {component} (channel 1)"
+                if kind == "Step-size distribution"
+                else f"{kind} (channel 1)"
+            )
             text = reader.pages[page_index].extract_text()
             assert text.count(title) == 1
             if kind == "Step-size distribution":
@@ -83,7 +87,7 @@ def test_frame_selection_minimum_length_empty_and_saved_results(localizations, f
                 ylabel = "Probability density (µm⁻¹)"
             else:
                 xlabel = "Lag (frames)" if frame_interval_s is None else "Lag time (s)"
-                ylabel = f"MSD {component} (µm²)"
+                ylabel = "MSD (µm²)"
             for label in (title, xlabel, ylabel):
                 assert label in text
                 text = text.replace(label, "")
@@ -125,18 +129,27 @@ def test_analysis_keeps_channels_signed_components_gaps_and_all_frame_lags(local
     gapped = tracks.loc[(tracks["channel"] == 0) & tracks["yum"].eq(4), "particle"].iloc[0]
     assert steps.loc[steps["particle"] == gapped, "frame_start"].tolist() == [0, 3]
     frames = np.arange(105)
-    # Simulated physical positions are input to the real Trackpy motion functions.
+    # Simulate GPU-fit coordinates with float32 storage and a large physical origin.
+    velocity = np.array([0.125, -0.0625, 0.03125])
+    origin = np.array([6.25, 15.5, 135.5])
     motion = pd.DataFrame(
         {
             "particle": 7,
             "channel": 0,
             "frame": frames,
-            "zum": 0.12 * frames,
-            "yum": -0.04 * frames,
-            "xum": 0.03 * frames,
+            **{
+                f"{axis}um": (origin[index] + velocity[index] * frames).astype(np.float32)
+                for index, axis in enumerate("zyx")
+            },
         }
     )
-    opposite = motion.assign(channel=1, zum=-motion["zum"], yum=-motion["yum"], xum=-motion["xum"])
+    opposite = motion.assign(
+        channel=1,
+        **{
+            f"{axis}um": (origin[index] - velocity[index] * frames).astype(np.float32)
+            for index, axis in enumerate("zyx")
+        },
+    )
     outputs = analyze_tracks(
         pd.concat([motion, opposite], ignore_index=True), frame_interval_s=0.02
     )
@@ -149,9 +162,9 @@ def test_analysis_keeps_channels_signed_components_gaps_and_all_frame_lags(local
     report = path.with_name("shared-limits.pdf")
     write_analysis_pdf(outputs, report, frame_interval_s=0.02)
     reader = PdfReader(report)
-    assert len(reader.pages) == 24
+    assert len(reader.pages) == 12
     reference_ticks = None
-    for page_index in [*range(4), *range(12, 16)]:
+    for page_index in [*range(4), *range(6, 10)]:
         text = reader.pages[page_index].extract_text().rsplit("\n", 1)[0]
         ticks = re.findall(r"[−-]?\d+(?:\.\d+)?(?:e[−+-]?\d+)?", text)
         assert ticks
@@ -162,15 +175,19 @@ def test_analysis_keeps_channels_signed_components_gaps_and_all_frame_lags(local
         selected = samples.loc[samples["channel"] == channel]
         np.testing.assert_allclose(
             selected[["dz_um", "dy_um", "dx_um"]],
-            np.tile(sign * np.array([0.12, -0.04, 0.03]), (104, 1)),
+            np.tile(sign * velocity, (104, 1)),
         )
-        np.testing.assert_allclose(selected["r_um"], 0.13)
+        np.testing.assert_allclose(selected["r_um"], np.linalg.norm(velocity))
     for name in ("msd_individual.parquet", "msd_ensemble.parquet"):
         table = outputs[name]
         assert table.groupby("channel")["lag_frames"].max().eq(104).all()
         np.testing.assert_allclose(
-            table["msd_r_um2"], 0.13**2 * table["lag_frames"] ** 2, atol=1e-10
+            table["msd_r_um2"], np.sum(velocity**2) * table["lag_frames"] ** 2, atol=1e-8
         )
+        for axis, speed in zip("zyx", velocity, strict=True):
+            np.testing.assert_allclose(
+                table[f"msd_{axis}_um2"], speed**2 * table["lag_frames"] ** 2, atol=1e-8
+            )
         np.testing.assert_allclose(table["lag_time_s"], 0.02 * table["lag_frames"])
 
 
@@ -216,7 +233,7 @@ def test_empty_analysis_and_cancelled_analysis_preserve_saved_files(localization
     for name in metadata["tracking"]["analysis"]["files"]:
         table = pd.read_parquet(path.with_name(name))
         assert table.empty and len(table.columns) > 0
-    assert len(PdfReader(path.with_name("tracking_analysis.pdf")).pages) == 12
+    assert len(PdfReader(path.with_name("tracking_analysis.pdf")).pages) == 6
 
 
 @pytest.mark.parametrize("dimensions, expected_tracks", [("2d", 1), ("3d", 0)])
