@@ -26,10 +26,10 @@ Open **Plugins → QI2lab Localization**.
 2. Confirm the axes, physical calibration, and preview region. Choose a 2D plane
    or 3D volume.
 3. Select a pretrained checkpoint from **U-FISH model**, or type a custom
-   weights path into the same dropdown. SimFISH remains the default; the list
+   weights path into the same dropdown. SunTag is the default; the list
    also includes the general all-data model and nine other fine-tuned checkpoints.
    The selected weights are saved in JSON for batch prediction.
-   Preview U-FISH priors and adjust `blend_3d` and the intensity threshold.
+   Preview U-FISH priors and adjust `blend_3d` and the intensity threshold (default 0.1).
    Optionally enable **GPU median noise suppression** to apply a 3×3×3 spatial
    filter before U-FISH (3×3 in 2D). Each timepoint/channel is filtered independently;
    Gaussian fitting uses the original counts.

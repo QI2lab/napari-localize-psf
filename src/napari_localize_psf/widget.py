@@ -216,7 +216,7 @@ class LocalizationWidget(QWidget):
         self.threshold = QDoubleSpinBox()
         self.threshold.setDecimals(5)
         self.threshold.setRange(0, 1e9)
-        self.threshold.setValue(0.2)
+        self.threshold.setValue(defaults.intensity_threshold)
         self.threshold.valueChanged.connect(self._invalidate_detection)
         form.addRow("Intensity threshold", self.threshold)
         self.collapse_priors = QCheckBox("Collapse nearby priors and fits")

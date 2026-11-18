@@ -78,6 +78,8 @@ def test_real_json_dialogs_are_parented_and_roundtrip(
     path = tmp_path / "settings.json"
     assert widget.weights.isEditable() and widget.weights.count() == 11
     assert widget.weights.currentText() == LocalizationConfig().ufish_weights
+    assert widget.weights.currentText() == "finetune_models/v1.0.1-suntag_model.pth"
+    assert widget.threshold.value() == LocalizationConfig().intensity_threshold == 0.1
     assert not widget.median_filter.isChecked()
     widget.median_filter.setChecked(True)
     widget.weights.setCurrentText(weights)
@@ -94,7 +96,7 @@ def test_real_json_dialogs_are_parented_and_roundtrip(
     assert json.loads(QApplication.clipboard().text())["fit_model"] == "3d"
     select_real_file(path, widget)
     widget._save_json()
-    assert LocalizationConfig.load(path).intensity_threshold == 0.2
+    assert LocalizationConfig.load(path).intensity_threshold == 0.1
     assert LocalizationConfig.load(path).ufish_median_filter
     assert LocalizationConfig.load(path).ufish_weights == weights
     assert LocalizationConfig.load(path).exclude_edge_centroids
@@ -111,7 +113,7 @@ def test_real_json_dialogs_are_parented_and_roundtrip(
     widget._reset_fit_filters()
     select_real_file(path, widget)
     widget._load_json()
-    assert widget.current_config().intensity_threshold == 0.2
+    assert widget.current_config().intensity_threshold == 0.1
     assert widget.median_filter.isChecked()
     assert widget.weights.currentText() == weights
     assert widget.weights.count() == 11
