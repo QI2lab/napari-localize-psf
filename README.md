@@ -64,3 +64,32 @@ GitHub Actions runs unit and non-GPU integration tests on Linux and Windows.
 [napari]: https://napari.org/
 [localize-psf]: https://github.com/QI2lab/localize-psf/tree/opm-ptv
 [uv]: https://docs.astral.sh/uv/
+
+## Tracking
+
+After loading `localizations.parquet` in **Batch results**, open **Tracking**.
+Select the matching time-series image in **Data**. Reader-opened OME images
+already have separate channel layers; tracks use time-first image axes such as
+`TZYX` or `TYX` and preserve the image's transforms.
+
+1. In **Tune**, select an inclusive, zero-based first/last frame range. Set the
+   maximum displacement along Z/Y/X in micrometres per frame, allowed missing
+   frames, and minimum detections per track. Choose 2D XY or 3D linking. The
+   standard Trackpy linker is used for diffusion, without velocity prediction.
+   **Adaptive stop** optionally lets Trackpy reduce the displacement range for
+   crowded subnetworks; zero disables it. Saved localization acceptance masks
+   remain in effect, and converged-only linking is selected by default.
+2. Select one source channel or link all channels independently, then click
+   **Preview tracks on selected frames**. Tuning overlays trajectories without
+   writing files. Empty frames count toward the allowed missing-frame limit.
+3. In **Run / results**, click **Track all frames and save**. This uses the same
+   tuning parameters over every saved frame, runs in a background CPU worker,
+   and writes `tracks.parquet` and `tracking.json` beside the input. **Cancel**
+   stops between linked frames. The original localizations are preserved.
+4. Tracks overlay the full source image with their original frame indices and
+   unique particle IDs across channels. Use the native Tracks layer's head/tail
+   controls to adjust the displayed trajectory window. **Load saved tracks**
+   restores both trajectories and the saved linking parameters.
+
+Linking and trajectory-length filtering call Trackpy directly. Input coordinate
+conversion reuses localize-psf; tracking is implemented only in this plugin.

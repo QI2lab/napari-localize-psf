@@ -99,12 +99,28 @@ class LocalizationWidget(QWidget):
         layout = QVBoxLayout(self)
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
-        data_page, prior_page, fit_page, filter_page, export_page, results_page = (
-            QWidget() for _ in range(6)
+        data_page, prior_page, fit_page, filter_page, export_page, results_page, tracking_page = (
+            QWidget() for _ in range(7)
         )
         for page, title in zip(
-            (data_page, prior_page, fit_page, filter_page, export_page, results_page),
-            ("Data", "U-FISH", "Fits", "Fit filters", "Export / batch", "Batch results"),
+            (
+                data_page,
+                prior_page,
+                fit_page,
+                filter_page,
+                export_page,
+                results_page,
+                tracking_page,
+            ),
+            (
+                "Data",
+                "U-FISH",
+                "Fits",
+                "Fit filters",
+                "Export / batch",
+                "Batch results",
+                "Tracking",
+            ),
             strict=True,
         ):
             scroll = QScrollArea()
@@ -442,6 +458,101 @@ class LocalizationWidget(QWidget):
         self.results_status.setWordWrap(True)
         form.addRow(self.results_status)
 
+        tracking_layout = QVBoxLayout(tracking_page)
+        form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        tracking_layout.addLayout(form)
+        self.tracking_path = QLineEdit()
+        self.tracking_path.setPlaceholderText("Batch output directory or localizations.parquet")
+        self.results_path.textChanged.connect(self.tracking_path.setText)
+        self.tracking_path.textChanged.connect(self.results_path.setText)
+        form.addRow("Localizations", self.tracking_path)
+        button = QPushButton("Choose localizations")
+        button.clicked.connect(self._choose_results)
+        form.addRow(button)
+        self.tracking_tabs = QTabWidget()
+        tracking_layout.addWidget(self.tracking_tabs)
+        tune_page, run_page = QWidget(), QWidget()
+        self.tracking_tabs.addTab(tune_page, "Tune")
+        self.tracking_tabs.addTab(run_page, "Run / results")
+        form = QFormLayout(tune_page)
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self.tracking_frames: dict[str, QSpinBox] = {}
+        for key, label, value in (("first", "First frame", 0), ("last", "Last frame", 49)):
+            box = QSpinBox()
+            box.setRange(0, 1_000_000)
+            box.setValue(value)
+            self.tracking_frames[key] = box
+            form.addRow(label, box)
+        self.tracking_dimensions = QComboBox()
+        self.tracking_dimensions.addItems(["3d", "2d"])
+        form.addRow("Link positions", self.tracking_dimensions)
+        self.tracking_ranges: dict[str, QDoubleSpinBox] = {}
+        for axis in "zyx":
+            box = QDoubleSpinBox()
+            box.setDecimals(6)
+            box.setRange(0.000001, 1_000_000)
+            box.setValue(0.5)
+            self.tracking_ranges[axis] = box
+            form.addRow(f"Max displacement {axis.upper()} (µm/frame)", box)
+        self.tracking_dimensions.currentTextChanged.connect(
+            lambda value: self.tracking_ranges["z"].setEnabled(value == "3d")
+        )
+        self.tracking_memory = QSpinBox()
+        self.tracking_memory.setRange(0, 1_000_000)
+        form.addRow("Allowed missing frames", self.tracking_memory)
+        self.tracking_min_length = QSpinBox()
+        self.tracking_min_length.setRange(1, 1_000_000)
+        self.tracking_min_length.setValue(2)
+        form.addRow("Minimum detections per track", self.tracking_min_length)
+        self.tracking_adaptive_stop = QDoubleSpinBox()
+        self.tracking_adaptive_stop.setDecimals(6)
+        self.tracking_adaptive_stop.setRange(0, 1_000_000)
+        self.tracking_adaptive_stop.setSpecialValueText("Off")
+        form.addRow("Adaptive stop (µm)", self.tracking_adaptive_stop)
+        self.tracking_converged = QCheckBox("Use converged localizations only")
+        self.tracking_converged.setChecked(True)
+        form.addRow(self.tracking_converged)
+        self.tracking_all_channels = QCheckBox("Link all channels independently")
+        self.tracking_channel = QSpinBox()
+        self.tracking_channel.setRange(0, 1_000_000)
+        self.tracking_all_channels.toggled.connect(self.tracking_channel.setDisabled)
+        form.addRow(self.tracking_all_channels)
+        form.addRow("Source channel", self.tracking_channel)
+        note = QLabel(
+            "Tune on an inclusive frame range. Displacements use physical µm and "
+            "Trackpy's ellipsoidal search range. Empty frames count toward memory. "
+            "Diffusion uses the standard linker without velocity prediction. "
+            "Select a time-series channel image in Data (time first, then spatial axes)."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+        self.tracking_preview_button = QPushButton("Preview tracks on selected frames")
+        self.tracking_preview_button.clicked.connect(partial(self.run_tracking, "preview"))
+        form.addRow(self.tracking_preview_button)
+        self.tracking_preview_status = QLabel()
+        self.tracking_preview_status.setWordWrap(True)
+        form.addRow(self.tracking_preview_status)
+        form = QFormLayout(run_page)
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        note = QLabel(
+            "Run the Tune settings over every saved frame in the selected channel(s). "
+            "Tracking runs here on a background CPU worker. Save tracks.parquet and "
+            "tracking.json beside the localizations, then overlay trajectories on "
+            "the full image. Use the Tracks layer's head/tail controls to change visibility."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+        self.tracking_run_button = QPushButton("Track all frames and save")
+        self.tracking_run_button.clicked.connect(partial(self.run_tracking, "full"))
+        form.addRow(self.tracking_run_button)
+        self.tracking_load_button = QPushButton("Load saved tracks")
+        self.tracking_load_button.clicked.connect(partial(self.run_tracking, "saved"))
+        form.addRow(self.tracking_load_button)
+        self.tracking_status = QLabel()
+        self.tracking_status.setWordWrap(True)
+        form.addRow(self.tracking_status)
+
         self.status = QLabel("Select data, verify calibration, then preview U-FISH priors.")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -523,6 +634,7 @@ class LocalizationWidget(QWidget):
         metadata = layer.metadata.get("napari_localize_psf", {})
         self.path.setText(metadata.get("input_uri", layer.source.path or ""))
         self.indices["source_channel"].setValue(metadata.get("source_channel", 0))
+        self.tracking_channel.setValue(metadata.get("source_channel", 0))
         if layer.ndim == 2:
             self.model.setCurrentText("2d")
         for name in _SOURCE_EVENTS:
@@ -792,6 +904,11 @@ class LocalizationWidget(QWidget):
             axes = self.axes.text().strip().lower()
             shape = (layer.data[0] if layer.multiscale else layer.data).shape
             channel = layer.metadata.get("napari_localize_psf", {}).get("source_channel")
+            if len(axes) == layer.ndim and "t" in axes:
+                for box in self.tracking_frames.values():
+                    box.setMaximum(shape[axes.index("t")] - 1)
+            if "z" not in axes:
+                self.tracking_dimensions.setCurrentText("2d")
             for axis, all_box, selector in (
                 ("t", self.results_all_timepoints, self.results_timepoint),
                 ("c", self.results_all_channels, self.results_channel),
@@ -881,6 +998,89 @@ class LocalizationWidget(QWidget):
             )
 
         self._start(compute, "Batch results")
+
+    def run_tracking(self, scope: str = "preview") -> None:
+        """Tune or execute Trackpy on saved fits; publish only on the GUI thread.
+
+        Preview uses inclusive frame limits and never saves. Full execution uses
+        all source frames and saves the current tuning settings and linked rows.
+        Saved results reload without linking. Native Tracks layers require a
+        time-first channel image; reader-opened OME channels already use this layout.
+        """
+        path = self._results_available()
+        if path is None:
+            self.tracking_status.setText(self.results_status.text())
+            self.tracking_preview_status.setText(self.results_status.text())
+            return
+        try:
+            layer = self._layer
+            assert layer is not None
+            axes = PreviewSettings(axes=self.axes.text().strip().lower()).axes
+            if layer.rgb or len(axes) != layer.ndim or not axes.startswith("t") or "c" in axes:
+                raise ValueError(
+                    "Select a time-first channel image in Data (T,[Z,]Y,X); "
+                    "open OME data through the readers to split channels."
+                )
+            if scope not in {"preview", "full", "saved"}:
+                raise ValueError("Choose tracking preview, full execution, or saved results")
+            source_uri = layer.metadata.get("napari_localize_psf", {}).get(
+                "input_uri", layer.source.path or ""
+            )
+            settings = dict(
+                search_range_um=tuple(self.tracking_ranges[axis].value() for axis in "zyx"),
+                memory=self.tracking_memory.value(),
+                min_length=self.tracking_min_length.value(),
+                dimensions=self.tracking_dimensions.currentText() if "z" in axes else "2d",
+                first_frame=self.tracking_frames["first"].value() if scope == "preview" else None,
+                last_frame=self.tracking_frames["last"].value() if scope == "preview" else None,
+                channel=None
+                if self.tracking_all_channels.isChecked()
+                else self.tracking_channel.value(),
+                converged_only=self.tracking_converged.isChecked(),
+                adaptive_stop_um=self.tracking_adaptive_stop.value() or None,
+                input_uri=source_uri,
+                save=scope == "full",
+            )
+        except Exception as error:
+            self.tracking_status.setText(str(error))
+            self.tracking_preview_status.setText(str(error))
+            self._errored(error)
+            return
+
+        def compute() -> BatchOverlay:
+            if scope == "saved":
+                import json
+
+                tracks = pd.read_parquet(path.with_name("tracks.parquet"))
+                metadata = json.loads(path.with_name("tracking.json").read_text(encoding="utf-8"))
+                if metadata.get("tracking", {}).get("schema_version") != 1:
+                    raise ValueError("Unsupported tracking settings version")
+                if not {"particle", "frame", "channel", "z", "y", "x"} <= set(tracks.columns):
+                    raise ValueError(
+                        "Select a saved Trackpy result with particle, frame and positions"
+                    )
+                saved_uri = metadata.get("input_uri", "")
+                if (
+                    source_uri
+                    and saved_uri
+                    and len(
+                        {
+                            uri.rstrip("/") if "://" in uri else str(Path(uri).resolve())
+                            for uri in (source_uri, saved_uri)
+                        }
+                    )
+                    != 1
+                ):
+                    raise ValueError("Select the tracks' matching input image in Data")
+            else:
+                from .tracking import link_localizations
+
+                tracks, metadata = link_localizations(
+                    path, **settings, cancelled=self._cancelled, progress=self.progress.emit
+                )
+            return tracks, metadata, str(path), axes, int(metadata["tracking"]["skipped_nonfinite"])
+
+        self._start(compute, f"Tracking {scope}")
 
     def run_fitting(self) -> None:
         """Fit only candidate priors produced for the current input and detector controls."""
@@ -1003,6 +1203,60 @@ class LocalizationWidget(QWidget):
                 text += f" Skipped {skipped} nonfinite fitted centers."
             self.results_status.setText(text)
             self.status.setText(text)
+        elif self._job_kind.startswith("Tracking "):
+            tracks, metadata, path, axes, skipped = cast(BatchOverlay, value)
+            if self._job_kind == "Tracking saved":
+                settings = metadata["tracking"]
+                for axis, distance in zip("zyx", settings["search_range_zyx_um"], strict=True):
+                    self.tracking_ranges[axis].setValue(distance)
+                self.tracking_dimensions.setCurrentText(settings["dimensions"])
+                self.tracking_memory.setValue(settings["memory"])
+                self.tracking_min_length.setValue(settings["min_length"])
+                self.tracking_converged.setChecked(settings["converged_only"])
+                self.tracking_adaptive_stop.setValue(settings["adaptive_stop_um"] or 0)
+                self.tracking_all_channels.setChecked(settings["channel"] is None)
+                if settings["channel"] is not None:
+                    self.tracking_channel.setValue(settings["channel"])
+            points = source_coordinates(
+                tracks[["z", "y", "x"]].to_numpy(),
+                axes,
+                timepoints=tracks["frame"].to_numpy(),
+                channels=tracks["channel"].to_numpy(),
+            )
+            name = f"{'Tracking preview' if self._job_kind == 'Tracking preview' else 'Tracks'}: {layer.name}"
+            if name in self.viewer.layers:
+                self.viewer.layers.remove(name)
+            other = f"{'Tracks' if self._job_kind == 'Tracking preview' else 'Tracking preview'}: {layer.name}"
+            if other in self.viewer.layers:
+                self.viewer.layers[other].visible = False
+            if len(tracks):
+                span = int(tracks["frame"].max() - tracks["frame"].min() + 1)
+                self.viewer.add_tracks(
+                    np.column_stack((tracks["particle"].to_numpy(), points)),
+                    name=name,
+                    **transforms,
+                    features=tracks,
+                    tail_length=span,
+                    head_length=span,
+                    metadata={
+                        "localization_output": True,
+                        "configuration": metadata,
+                        "batch_results_path": path,
+                        "source_layer": layer.name,
+                    },
+                )
+            text = f"{tracks['particle'].nunique()} tracks, {len(tracks)} linked localizations."
+            if skipped:
+                text += f" Skipped {skipped} nonfinite centers."
+            if self._job_kind == "Tracking full":
+                text += f" Saved tracks.parquet and tracking.json in {Path(path).parent}."
+            target = (
+                self.tracking_preview_status
+                if self._job_kind == "Tracking preview"
+                else self.tracking_status
+            )
+            target.setText(text)
+            self.status.setText(text)
         elif self._job_kind == "GPUfit":
             preview, result, config = cast(tuple[Preview, FitResults, LocalizationConfig], value)
             parameters = result["fit_params"]
@@ -1065,6 +1319,9 @@ class LocalizationWidget(QWidget):
         self.status.setText(text)
         if self._busy and self._job_kind == "Batch results":
             self.results_status.setText(text)
+        if self._busy and self._job_kind.startswith("Tracking "):
+            self.tracking_status.setText(text)
+            self.tracking_preview_status.setText(text)
         if not isinstance(error, CancelledError):
             show_error(text)
 
