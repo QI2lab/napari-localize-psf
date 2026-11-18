@@ -53,6 +53,7 @@ def test_widget_tunes_executes_saves_and_reloads_tracks(viewer, qtbot, localizat
     assert set(preview.features["frame"]) == {1, 2, 3}
     assert not path.with_name("tracks.parquet").exists()
     assert not path.with_name("msd_individual.parquet").exists()
+    assert not path.with_name("tracking_analysis.pdf").exists()
     assert widget.tracking_frame_interval.value() == 0.015
     widget.tracking_run_button.click()
     qtbot.waitUntil(lambda: not widget._busy, timeout=30000)
@@ -71,6 +72,7 @@ def test_widget_tunes_executes_saves_and_reloads_tracks(viewer, qtbot, localizat
     assert saved["tracking"]["frame_interval_s"] == 0.015
     for name in saved["tracking"]["analysis"]["files"]:
         assert path.with_name(name).is_file()
+    assert path.with_name(saved["tracking"]["analysis"]["report_file"]).is_file()
     original = overlay.data.copy()
     viewer.layers.remove(overlay)
     widget.tracking_memory.setValue(0)

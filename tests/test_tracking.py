@@ -1,6 +1,7 @@
 """Real Trackpy integration with simulated localization coordinates and Parquet IO."""
 
 import json
+import re
 from concurrent.futures import CancelledError
 from threading import Event
 
@@ -9,8 +10,9 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from pypdf import PdfReader
 
-from napari_localize_psf.tracking import analyze_tracks, link_localizations
+from napari_localize_psf.tracking import analyze_tracks, link_localizations, write_analysis_pdf
 
 pytestmark = pytest.mark.integration
 
@@ -51,6 +53,7 @@ def test_frame_selection_minimum_length_empty_and_saved_results(localizations, f
     assert metadata["tracking"]["first_frame"] == 1
     assert metadata["tracking"]["last_frame"] == 3
     assert not path.with_name("tracking.json").exists()
+    assert not path.with_name("tracking_analysis.pdf").exists()
     tracks, metadata = link_localizations(
         path,
         search_range_um=(0.3, 0.3, 0.3),
@@ -67,6 +70,25 @@ def test_frame_selection_minimum_length_empty_and_saved_results(localizations, f
     assert metadata["tracking"]["frame_interval_s"] == frame_interval_s
     analysis = metadata["tracking"]["analysis"]
     assert len(analysis["files"]) == 4
+    reader = PdfReader(path.with_name(analysis["report_file"]))
+    assert len(reader.pages) == 12
+    page_index = 0
+    for kind in ("Step-size distribution", "Ensemble MSD", "Individual MSDs"):
+        for component in "rzyx":
+            title = f"{kind}: {component} (channel 1)"
+            text = reader.pages[page_index].extract_text()
+            assert text.count(title) == 1
+            if kind == "Step-size distribution":
+                xlabel = f"{'r' if component == 'r' else 'Δ' + component} (µm)"
+                ylabel = "Probability density (µm⁻¹)"
+            else:
+                xlabel = "Lag (frames)" if frame_interval_s is None else "Lag time (s)"
+                ylabel = f"MSD {component} (µm²)"
+            for label in (title, xlabel, ylabel):
+                assert label in text
+                text = text.replace(label, "")
+            assert re.fullmatch(r"[\s0-9eE+.−-]*", text)
+            page_index += 1
     for name in analysis["files"]:
         schema = pq.read_schema(path.with_name(name))
         assert json.loads(schema.metadata[b"napari_localize_psf_tracking"]) == metadata
@@ -119,6 +141,23 @@ def test_analysis_keeps_channels_signed_components_gaps_and_all_frame_lags(local
         pd.concat([motion, opposite], ignore_index=True), frame_interval_s=0.02
     )
     samples = outputs["step_sizes.parquet"]
+    histograms = outputs["step_size_distributions.parquet"]
+    shared = histograms.loc[(histograms["channel"] == 0) & (histograms["component"] == "r")]
+    for _, histogram in histograms.groupby(["channel", "component"]):
+        np.testing.assert_array_equal(histogram["bin_left_um"], shared["bin_left_um"])
+        np.testing.assert_array_equal(histogram["bin_right_um"], shared["bin_right_um"])
+    report = path.with_name("shared-limits.pdf")
+    write_analysis_pdf(outputs, report, frame_interval_s=0.02)
+    reader = PdfReader(report)
+    assert len(reader.pages) == 24
+    reference_ticks = None
+    for page_index in [*range(4), *range(12, 16)]:
+        text = reader.pages[page_index].extract_text().rsplit("\n", 1)[0]
+        ticks = re.findall(r"[−-]?\d+(?:\.\d+)?(?:e[−+-]?\d+)?", text)
+        assert ticks
+        if reference_ticks is None:
+            reference_ticks = ticks
+        assert ticks == reference_ticks
     for channel, sign in ((0, 1), (1, -1)):
         selected = samples.loc[samples["channel"] == channel]
         np.testing.assert_allclose(
@@ -135,13 +174,21 @@ def test_analysis_keeps_channels_signed_components_gaps_and_all_frame_lags(local
         np.testing.assert_allclose(table["lag_time_s"], 0.02 * table["lag_frames"])
 
 
-@pytest.mark.parametrize("cancel_stage", ["Analyzing", "Saving msd_individual.parquet"])
+@pytest.mark.parametrize(
+    "cancel_stage",
+    ["Analyzing", "Saving msd_individual.parquet", "Writing PDF: Step-size distribution: z"],
+)
 def test_empty_analysis_and_cancelled_analysis_preserve_saved_files(localizations, cancel_stage):
     path, _ = localizations
     tracks, metadata = link_localizations(
         path, search_range_um=(0.3, 0.3, 0.3), memory=1, save=True
     )
-    filenames = ["tracks.parquet", "tracking.json", *metadata["tracking"]["analysis"]["files"]]
+    filenames = [
+        "tracks.parquet",
+        "tracking.json",
+        metadata["tracking"]["analysis"]["report_file"],
+        *metadata["tracking"]["analysis"]["files"],
+    ]
     before = {name: path.with_name(name).read_bytes() for name in filenames}
     cancelled = Event()
 
@@ -169,6 +216,7 @@ def test_empty_analysis_and_cancelled_analysis_preserve_saved_files(localization
     for name in metadata["tracking"]["analysis"]["files"]:
         table = pd.read_parquet(path.with_name(name))
         assert table.empty and len(table.columns) > 0
+    assert len(PdfReader(path.with_name("tracking_analysis.pdf")).pages) == 12
 
 
 @pytest.mark.parametrize("dimensions, expected_tracks", [("2d", 1), ("3d", 0)])

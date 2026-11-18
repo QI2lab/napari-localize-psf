@@ -28,7 +28,8 @@ def analyze_tracks(
     magnitude use ZYX, including Z when linking used an XY search. Planar data
     have constant Z. Only adjacent-frame observations contribute to step
     distributions; gaps are never treated as one-frame steps. Marginals use
-    NumPy's Freedman–Diaconis histogram bins and retain raw step samples too.
+    one set of NumPy Freedman–Diaconis histogram bins pooled across every
+    component and channel, retaining raw step samples too.
 
     Trackpy computes individual MSD components and its N-weighted ensemble MSD
     independently per channel, through every available frame lag. N is its
@@ -178,9 +179,11 @@ def analyze_tracks(
             collected["msd_ensemble.parquet"].append(ensemble.reset_index().assign(channel=channel))
     step_samples = collected["step_sizes.parquet"]
     if step_samples:
-        for channel, steps in pd.concat(step_samples, ignore_index=True).groupby(
-            "channel", sort=True
-        ):
+        samples = pd.concat(step_samples, ignore_index=True)
+        edges = np.histogram_bin_edges(
+            samples[["r_um", "dz_um", "dy_um", "dx_um"]].to_numpy().ravel(), bins="fd"
+        )
+        for channel, steps in samples.groupby("channel", sort=True):
             for component, column in (
                 ("r", "r_um"),
                 ("z", "dz_um"),
@@ -190,7 +193,7 @@ def analyze_tracks(
                 if cancelled is not None and cancelled.is_set():
                     raise CancelledError("Track analysis cancelled")
                 values = steps[column].to_numpy()
-                counts, edges = np.histogram(values, bins="fd")
+                counts, _ = np.histogram(values, bins=edges)
                 collected["step_size_distributions.parquet"].append(
                     pd.DataFrame(
                         dict(
@@ -213,6 +216,128 @@ def analyze_tracks(
         else pd.DataFrame({column: pd.Series(dtype=dtype) for column, dtype in types.items()})
         for name, types in schemas.items()
     }
+
+
+def write_analysis_pdf(
+    analyses: dict[str, pd.DataFrame],
+    path: str | Path,
+    *,
+    frame_interval_s: float | None = None,
+    cancelled: Event | None = None,
+    progress: Callable[[str], None] | None = None,
+) -> None:
+    """Plot saved analysis values, one titled/labeled axes per PDF page.
+
+    Each channel has r/Z/Y/X marginal, ensemble MSD and individual MSD pages.
+    Individual trajectories share one axes per component. All step pages share
+    the exported bin edges and identical x/y limits across channels. Distances
+    use µm, squared displacements µm², and lag times seconds when calibrated.
+    Empty results produce labeled empty plots. No legends or narrative text
+    are added. Figure/PDF objects are used directly without a GUI backend.
+    """
+    from matplotlib.backends.backend_pdf import PdfPages
+    from matplotlib.collections import LineCollection
+    from matplotlib.figure import Figure
+
+    distributions = analyses["step_size_distributions.parquet"]
+    individual = analyses["msd_individual.parquet"]
+    ensemble = analyses["msd_ensemble.parquet"]
+    channels = sorted(
+        {int(channel) for table in analyses.values() for channel in table["channel"].unique()}
+    )
+    x_limits = (
+        (0.0, 1.0)
+        if distributions.empty
+        else (float(distributions["bin_left_um"].min()), float(distributions["bin_right_um"].max()))
+    )
+    peak = 0.0 if distributions.empty else float(distributions["density_per_um"].max())
+    y_limits = (0.0, peak * 1.05 if peak > 0 else 1.0)
+    lag_column = "lag_frames" if frame_interval_s is None else "lag_time_s"
+    lag_label = "Lag (frames)" if frame_interval_s is None else "Lag time (s)"
+    with PdfPages(
+        path, metadata={"Title": "Tracking analysis", "Creator": "napari-localize-psf"}
+    ) as pdf:
+        for channel in channels or [None]:
+            suffix = "" if channel is None else f" (channel {channel})"
+            for kind, table in (
+                ("Step-size distribution", distributions),
+                ("Ensemble MSD", ensemble),
+                ("Individual MSDs", individual),
+            ):
+                selected = (
+                    table.loc[table["channel"] == channel]
+                    if channel is not None
+                    else table.iloc[:0]
+                )
+                for component in "rzyx":
+                    title = f"{kind}: {component}{suffix}"
+                    if progress is not None:
+                        progress(f"Writing PDF: {title}")
+                    if cancelled is not None and cancelled.is_set():
+                        raise CancelledError("Tracking report cancelled")
+                    figure = Figure(figsize=(7.5, 5.5), layout="constrained")
+                    try:
+                        axis = figure.subplots()
+                        if kind == "Step-size distribution":
+                            bins = selected.loc[selected["component"] == component].sort_values(
+                                "bin_left_um"
+                            )
+                            if len(bins):
+                                edges = np.r_[
+                                    bins["bin_left_um"].to_numpy(), bins["bin_right_um"].iloc[-1]
+                                ]
+                                axis.stairs(
+                                    bins["density_per_um"].to_numpy(),
+                                    edges,
+                                    fill=True,
+                                    color="tab:blue",
+                                    alpha=0.7,
+                                )
+                            axis.set(
+                                xlim=x_limits,
+                                ylim=y_limits,
+                                xlabel=f"{'r' if component == 'r' else 'Δ' + component} (µm)",
+                                ylabel="Probability density (µm⁻¹)",
+                            )
+                        else:
+                            column = f"msd_{component}_um2"
+                            if kind == "Individual MSDs" and len(selected):
+                                curves = [
+                                    trajectory[[lag_column, column]].to_numpy()
+                                    for _, trajectory in selected.groupby("particle", sort=True)
+                                ]
+                                axis.add_collection(
+                                    LineCollection(
+                                        curves,
+                                        colors="tab:blue",
+                                        linewidths=0.6,
+                                        alpha=0.3,
+                                        rasterized=True,
+                                    )
+                                )
+                                axis.scatter(
+                                    selected[lag_column],
+                                    selected[column],
+                                    color="tab:blue",
+                                    s=3,
+                                    alpha=0.25,
+                                    rasterized=True,
+                                )
+                                axis.autoscale_view()
+                            elif len(selected):
+                                axis.plot(
+                                    selected[lag_column],
+                                    selected[column],
+                                    color="tab:blue",
+                                    linewidth=1.5,
+                                    marker=".",
+                                    markersize=3,
+                                )
+                            axis.set(xlabel=lag_label, ylabel=f"MSD {component} (µm²)")
+                        axis.set_title(title)
+                        pdf.savefig(figure, dpi=200)
+                    finally:
+                        figure.clear()
 
 
 def link_localizations(
@@ -246,7 +371,8 @@ def link_localizations(
     length counts detections, using Trackpy's filter_stubs. Cancellation is checked
     between frames and before saving. Full runs may atomically replace tracks.parquet
     and tracking.json beside the input, plus automatic step distributions and
-    individual/ensemble MSD Parquet analyses; tuning runs leave ``save=False``.
+    individual/ensemble MSD Parquet analyses and a PDF plot report; tuning runs
+    leave ``save=False``.
     ``frame_interval_s`` calibrates the analysis lag times; None keeps frame lags.
     Return linked rows plus saved localization metadata and tracking settings.
     """
@@ -386,7 +512,9 @@ def link_localizations(
             step_lag_frames=1,
             radial_definition="sqrt(dz_um**2 + dy_um**2 + dx_um**2)",
             component_steps="signed",
-            histogram_bins="numpy-fd",
+            histogram_bins="numpy-fd-shared-components-and-channels",
+            report_file="tracking_analysis.pdf",
+            step_plot_limits="shared-x-and-y-across-components-and-channels",
             ensemble_scope="per_channel",
             msd_weighting="trackpy-effective-N",
             max_lag_frames="all_available",
@@ -412,6 +540,13 @@ def link_localizations(
                     }
                 )
                 pq.write_table(table, directory / name)
+            write_analysis_pdf(
+                analyses,
+                directory / settings["analysis"]["report_file"],
+                frame_interval_s=frame_interval_s,
+                cancelled=cancelled,
+                progress=progress,
+            )
             (directory / "tracking.json").write_bytes(encoded)
             if cancelled is not None and cancelled.is_set():
                 raise CancelledError("Tracking cancelled")

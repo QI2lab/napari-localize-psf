@@ -20,6 +20,7 @@ classifiers = [
 ]
 dependencies = [
     "localize-psf[gpu,example]>=0.2.12",
+    "matplotlib>=3.9",
     "numpy>=2",
     "ome-zarr>=0.20.1",
     "pandas",
@@ -44,6 +45,7 @@ test = [
     "pytest>=9",
     "pytest-cov>=7",
     "pytest-qt>=4.5",
+    "pypdf>=6",
     "pyarrow>=18",
     "typer>=0.16,<1",
     "trackpy>=0.7",

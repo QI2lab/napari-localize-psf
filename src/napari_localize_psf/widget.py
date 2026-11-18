@@ -550,7 +550,7 @@ class LocalizationWidget(QWidget):
             "Run the Tune settings over every saved frame in the selected channel(s). "
             "Tracking runs here on a background CPU worker. Save tracks.parquet, "
             "tracking.json, step distributions and individual/ensemble MSD Parquet "
-            "analyses beside the localizations, then overlay trajectories on "
+            "analyses and tracking_analysis.pdf beside the localizations, then overlay trajectories on "
             "the full image. Use the Tracks layer's head/tail controls to change visibility."
         )
         note.setWordWrap(True)
@@ -1282,9 +1282,7 @@ class LocalizationWidget(QWidget):
             if skipped:
                 text += f" Skipped {skipped} nonfinite centers."
             if self._job_kind == "Tracking full":
-                text += (
-                    f" Saved tracks, step distributions and MSD analyses in {Path(path).parent}."
-                )
+                text += f" Saved tracks, analyses and tracking_analysis.pdf in {Path(path).parent}."
             target = (
                 self.tracking_preview_status
                 if self._job_kind == "Tracking preview"
