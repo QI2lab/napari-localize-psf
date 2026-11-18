@@ -23,6 +23,7 @@ example dependencies into that environment.
 Open **Plugins → QI2lab Localization**.
 
 1. Open an OME-TIFF or OME-Zarr dataset, or select an existing image layer.
+   Output/results directories and file dialogs default to the dataset's parent folder.
 2. Confirm the axes, physical calibration, and preview region. Choose a 2D plane
    or 3D volume.
 3. Select a pretrained checkpoint from **U-FISH model**, or type a custom

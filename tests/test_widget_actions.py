@@ -32,11 +32,13 @@ def select_real_file():
 
     deadline.timeout.connect(dismiss)
 
-    def select(path: Path | None, parent: QWidget) -> None:
+    def select(path: Path | None, parent: QWidget, expected_directory: Path | None = None) -> None:
         def accept_selection() -> None:
             dialog = QApplication.activeModalWidget()
             assert isinstance(dialog, QFileDialog)
             assert dialog.parentWidget() is parent
+            if expected_directory is not None:
+                assert Path(dialog.directory().absolutePath()) == expected_directory
             buttons = dialog.findChild(QDialogButtonBox)
             if path is None:
                 buttons.button(QDialogButtonBox.StandardButton.Cancel).click()
@@ -174,6 +176,29 @@ def test_real_tiff_dialog_reads_through_upstream_reader(viewer, qtbot, tmp_path,
     assert len(viewer.layers) == 1
     assert viewer.layers[0].source.reader_plugin == "napari-tiff"
     assert Path(widget.path.text()) == path
+    for control in (widget.output, widget.results_path, widget.tracking_path):
+        assert control.text() == str(tmp_path)
+    widget.manual.setChecked(True)
+    config_path = tmp_path / "first-settings.json"
+    select_real_file(config_path, widget, expected_directory=tmp_path)
+    widget._save_json()
+    before = config_path.read_bytes()
+    widget.output.setText(str(tmp_path / "custom-output"))
+    widget.results_path.setText(str(tmp_path / "custom-results.parquet"))
+    other = tmp_path / "next.ome.tiff"
+    tifffile.imwrite(
+        other,
+        np.ones((5, 11, 13), np.uint16),
+        ome=True,
+        photometric="minisblack",
+        metadata={"axes": "ZYX"},
+    )
+    select_real_file(other, widget, expected_directory=tmp_path)
+    widget._choose_tiff()
+    for control in (widget.output, widget.results_path, widget.tracking_path):
+        assert control.text() == str(tmp_path)
+    assert widget._config_path is None
+    assert config_path.read_bytes() == before
 
 
 def test_invalid_actions_show_errors_without_starting_workers(viewer, qtbot):
@@ -211,7 +236,7 @@ def test_copy_command_quotes_paths_and_saves_current_settings(
     widget._open()
     widget.manual.setChecked(True)
     config_path = tmp_path / "settings with spaces.json"
-    select_real_file(config_path, widget)
+    select_real_file(config_path, widget, expected_directory=tmp_path)
     widget._save_json()
     widget.threshold.setValue(0.65)
     widget.median_filter.setChecked(True)

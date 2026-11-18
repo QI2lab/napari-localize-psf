@@ -97,6 +97,7 @@ class LocalizationWidget(QWidget):
         self._calibrated = False
         self._source_error: str | None = None
         self._config_path: Path | None = None
+        self._directory_source: Path | None = None
         layout = QVBoxLayout(self)
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
@@ -609,7 +610,7 @@ class LocalizationWidget(QWidget):
         self._select_layer()
 
     def _select_layer(self, *args: object) -> None:
-        """Use reader axes/calibration and observe source edits to reject stale work."""
+        """Use reader geometry, seed paths per dataset, and reject stale source work."""
         if self._closing:
             return
         if self._layer is not None:
@@ -644,6 +645,23 @@ class LocalizationWidget(QWidget):
         )
         metadata = layer.metadata.get("napari_localize_psf", {})
         self.path.setText(metadata.get("input_uri", layer.source.path or ""))
+        source = layer.source.path or metadata.get("input_uri", "")
+        if source and "://" not in source:
+            dataset = Path(source).expanduser().absolute()
+            # Nested OME-Zarr image groups share the store's parent directory.
+            dataset = next(
+                (path for path in (dataset, *dataset.parents) if path.suffix.lower() == ".zarr"),
+                dataset,
+            )
+            if (
+                dataset.suffix.lower() in {".zarr", ".tif", ".tiff"}
+                or layer.source.reader_plugin in {"napari-tiff", "napari-ome-zarr"}
+            ) and dataset != self._directory_source:
+                self._directory_source = dataset
+                self._config_path = None
+                directory = str(dataset.parent)
+                self.output.setText(directory)
+                self.results_path.setText(directory)
         self.indices["source_channel"].setValue(metadata.get("source_channel", 0))
         self.tracking_channel.setValue(metadata.get("source_channel", 0))
         if layer.ndim == 2:
@@ -1371,13 +1389,22 @@ class LocalizationWidget(QWidget):
         self._start(partial(optical_parameters, config), "Optical bounds")
 
     def _choose_tiff(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Open OME-TIFF", filter="TIFF (*.tif *.tiff)")
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open OME-TIFF",
+            str(self._directory_source.parent) if self._directory_source else "",
+            "TIFF (*.tif *.tiff)",
+        )
         if path:
             self.path.setText(path)
             self._open()
 
     def _choose_zarr(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "Open OME-Zarr image group")
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "Open OME-Zarr image group",
+            str(self._directory_source.parent) if self._directory_source else "",
+        )
         if path:
             self.path.setText(path)
             self._open()
@@ -1410,8 +1437,12 @@ class LocalizationWidget(QWidget):
     def _save_json(self) -> None:
         try:
             config = self.current_config()
+            suggested = self._config_path or (
+                (self._directory_source.parent if self._directory_source else Path.cwd())
+                / "localization.json"
+            )
             path, _ = QFileDialog.getSaveFileName(
-                self, "Save localization settings", "localization.json", "JSON (*.json)"
+                self, "Save localization settings", str(suggested), "JSON (*.json)"
             )
             if path:
                 config.save(path)
@@ -1423,7 +1454,12 @@ class LocalizationWidget(QWidget):
 
     def _load_json(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Load localization settings", filter="JSON (*.json)"
+            self,
+            "Load localization settings",
+            str(self._config_path or self._directory_source.parent)
+            if self._config_path or self._directory_source
+            else "",
+            "JSON (*.json)",
         )
         if not path:
             return

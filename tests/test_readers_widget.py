@@ -37,6 +37,8 @@ def test_tiff_reader_and_widget_configuration(viewer, qtbot, tmp_path):
     np.testing.assert_allclose(spacing, (0.2, 0.1, 0.1))
     widget = LocalizationWidget(viewer)
     qtbot.addWidget(widget)
+    for control in (widget.output, widget.results_path, widget.tracking_path):
+        assert control.text() == str(tmp_path)
     widget.threshold.setValue(0.6)
     widget.blend.setChecked(False)
     config = widget.current_config()
@@ -53,12 +55,14 @@ def test_tiff_reader_and_widget_configuration(viewer, qtbot, tmp_path):
     assert widget.batch_button.text() == "Copy batch command"
 
 
-@pytest.mark.parametrize("group", ["0", ""])
-def test_ome_zarr_reader_multichannel_calibration(viewer, qtbot, tmp_path, group):
+@pytest.mark.parametrize(
+    "store_name,group", [("counts.ome.zarr", "0"), ("counts.ome.zarr", ""), ("counts-store", "")]
+)
+def test_ome_zarr_reader_multichannel_calibration(viewer, qtbot, tmp_path, store_name, group):
     from yaozarrs import DimSpec, v05
     from yaozarrs.write.v05 import write_bioformats2raw
 
-    path = tmp_path / "counts.ome.zarr"
+    path = tmp_path / store_name
     data = np.ones((2, 7, 19, 21), dtype=np.uint16)
     dims = [DimSpec(name="c", size=2)] + [
         DimSpec(name=name, size=size, scale=scale, unit="micrometer")
@@ -109,6 +113,16 @@ def test_ome_zarr_reader_multichannel_calibration(viewer, qtbot, tmp_path, group
     np.testing.assert_allclose(native[-1].affine.affine_matrix, placement.affine_matrix)
     assert config.input_uri == str(path / selected_group)
     assert config.channel == 1
+    for control in (widget.output, widget.results_path, widget.tracking_path):
+        assert control.text() == str(tmp_path)
+    custom_output = tmp_path / "custom-output"
+    custom_results = tmp_path / "results" / "localizations.parquet"
+    widget.output.setText(str(custom_output))
+    widget.results_path.setText(str(custom_results))
+    widget.layers.setCurrentIndex(widget.layers.findData(native[0]))
+    widget.layers.setCurrentIndex(widget.layers.findData(native[-1]))
+    assert widget.output.text() == str(custom_output)
+    assert widget.results_path.text() == widget.tracking_path.text() == str(custom_results)
 
 
 def test_npe2_manifest_instantiates_the_real_widget(viewer, qtbot):
