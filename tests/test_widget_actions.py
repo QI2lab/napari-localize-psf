@@ -80,10 +80,11 @@ def test_real_json_dialogs_are_parented_and_roundtrip(
     assert widget.weights.currentText() == LocalizationConfig().ufish_weights
     assert widget.weights.currentText() == "finetune_models/v1.0.1-suntag_model.pth"
     assert widget.threshold.value() == LocalizationConfig().intensity_threshold == 0.1
-    assert not widget.median_filter.isChecked()
-    widget.median_filter.setChecked(True)
+    assert widget.median_filter.isChecked() and widget.exclude_edges.isChecked()
+    assert widget.edge_margin.value() == 1 and widget.edge_margin.isEnabled()
+    widget.median_filter.setChecked(False)
     widget.weights.setCurrentText(weights)
-    widget.exclude_edges.setChecked(True)
+    widget.exclude_edges.setChecked(False)
     widget.edge_margin.setValue(3)
     widget.collapse_priors.setChecked(False)
     widget.amplitude_min.setText("150")
@@ -97,27 +98,27 @@ def test_real_json_dialogs_are_parented_and_roundtrip(
     select_real_file(path, widget)
     widget._save_json()
     assert LocalizationConfig.load(path).intensity_threshold == 0.1
-    assert LocalizationConfig.load(path).ufish_median_filter
+    assert not LocalizationConfig.load(path).ufish_median_filter
     assert LocalizationConfig.load(path).ufish_weights == weights
-    assert LocalizationConfig.load(path).exclude_edge_centroids
+    assert not LocalizationConfig.load(path).exclude_edge_centroids
     assert LocalizationConfig.load(path).edge_margin_px == 3
     assert not LocalizationConfig.load(path).collapse_close_priors
     assert LocalizationConfig.load(path).fit_filters == widget.current_config().fit_filters
     assert LocalizationConfig.load(path).return_covariance
     widget.threshold.setValue(0.7)
-    widget.median_filter.setChecked(False)
+    widget.median_filter.setChecked(True)
     widget.weights.setCurrentText(LocalizationConfig().ufish_weights)
-    widget.exclude_edges.setChecked(False)
+    widget.exclude_edges.setChecked(True)
     widget.edge_margin.setValue(1)
     widget.collapse_priors.setChecked(True)
     widget._reset_fit_filters()
     select_real_file(path, widget)
     widget._load_json()
     assert widget.current_config().intensity_threshold == 0.1
-    assert widget.median_filter.isChecked()
+    assert not widget.median_filter.isChecked()
     assert widget.weights.currentText() == weights
     assert widget.weights.count() == 11
-    assert widget.exclude_edges.isChecked()
+    assert not widget.exclude_edges.isChecked() and not widget.edge_margin.isEnabled()
     assert widget.edge_margin.value() == 3
     assert not widget.collapse_priors.isChecked()
     assert widget.amplitude_min.text() == "150.0"

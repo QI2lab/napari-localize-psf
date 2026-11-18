@@ -1060,8 +1060,8 @@ wheels = [
 
 [[package]]
 name = "localize-psf"
-version = "0.2.11"
-source = { git = "https://github.com/QI2lab/localize-psf.git?branch=opm-ptv#db3a314590d677bedecc680b1c5a08321d3fecdc" }
+version = "0.2.12"
+source = { git = "https://github.com/QI2lab/localize-psf.git?branch=opm-ptv#b866b2e6df2cc6f7974fa92a411be4178d5e2e34" }
 dependencies = [
     { name = "joblib" },
     { name = "matplotlib" },
@@ -1457,6 +1457,7 @@ test = [
     { name = "pytest-cov" },
     { name = "pytest-qt" },
     { name = "qtpy" },
+    { name = "trackpy" },
     { name = "typer" },
     { name = "yaozarrs", extra = ["io", "write-tensorstore"] },
 ]
@@ -1487,6 +1488,7 @@ test = [
     { name = "pytest-cov", specifier = ">=7" },
     { name = "pytest-qt", specifier = ">=4.5" },
     { name = "qtpy", specifier = ">=2.4" },
+    { name = "trackpy", specifier = ">=0.7" },
     { name = "typer", specifier = ">=0.16,<1" },
     { name = "yaozarrs", extras = ["io", "write-tensorstore"], git = "https://github.com/imaging-formats/yaozarrs.git?rev=main" },
 ]

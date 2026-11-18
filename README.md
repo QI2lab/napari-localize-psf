@@ -30,13 +30,13 @@ Open **Plugins → QI2lab Localization**.
    also includes the general all-data model and nine other fine-tuned checkpoints.
    The selected weights are saved in JSON for batch prediction.
    Preview U-FISH priors and adjust `blend_3d` and the intensity threshold (default 0.1).
-   Optionally enable **GPU median noise suppression** to apply a 3×3×3 spatial
+   **GPU median noise suppression** is enabled by default and applies a 3×3×3 spatial
    filter before U-FISH (3×3 in 2D). Each timepoint/channel is filtered independently;
    Gaussian fitting uses the original counts.
    Nearby priors and duplicate fitted centers are merged automatically using
    the optical settings in **Fits**.
-   Enable **Exclude centroids near data edges** to omit edge artifacts from
-   previews, fits, and batch processing. The margin defaults to two voxels;
+   **Exclude centroids near data edges** is enabled by default to omit edge artifacts
+   from previews, fits, and batch processing. The margin defaults to one voxel;
    adjust **Edge margin** to widen it. Existing priors update automatically.
 4. Set fit bounds, initial values, fixed parameters, and solver options, then
    preview Gaussian fits. Positions and widths use µm; center settings are

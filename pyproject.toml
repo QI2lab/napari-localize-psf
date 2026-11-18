@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
 dependencies = [
-    "localize-psf[gpu,example]>=0.2.11",
+    "localize-psf[gpu,example]>=0.2.12",
     "numpy>=2",
     "ome-zarr>=0.20.1",
     "pandas",
@@ -46,6 +46,7 @@ test = [
     "pytest-qt>=4.5",
     "pyarrow>=18",
     "typer>=0.16,<1",
+    "trackpy>=0.7",
     "yaozarrs[io,write-tensorstore] @ git+https://github.com/imaging-formats/yaozarrs.git@main",
 ]
 
