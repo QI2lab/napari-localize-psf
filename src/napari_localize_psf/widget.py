@@ -1736,14 +1736,19 @@ class LocalizationWidget(QWidget):
             config = self.current_config()
             if self._config_path is None or not self.output.text().strip() or not config.input_uri:
                 raise ValueError("Save JSON and choose an input and output directory first")
+            input_uri = config.input_uri
+            container = self._layer.metadata.get("napari_localize_psf", {}).get("container_uri")
+            if container and container != input_uri:
+                from localize_psf.workflow import ome_zarr_image_paths
+
+                if ome_zarr_image_paths(container) == [input_uri]:
+                    input_uri = container
             config.save(self._config_path)
             arguments = [
                 sys.executable,
                 "-m",
                 "localize_psf.batch",
-                config.input_uri
-                if "://" in config.input_uri
-                else str(Path(config.input_uri).resolve()),
+                input_uri if "://" in input_uri else str(Path(input_uri).resolve()),
                 "--metadata",
                 str(self._config_path.resolve()),
                 "--output-dir",

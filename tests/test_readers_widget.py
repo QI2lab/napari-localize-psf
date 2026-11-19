@@ -1,10 +1,14 @@
 """Integration tests of installed readers, npe2 discovery, and the real Qt dock."""
 
+import shlex
+import sys
+
 import numpy as np
 import pytest
 import tifffile
 from napari.utils.transforms import Affine
 from npe2 import PluginManifest
+from qtpy.QtWidgets import QApplication
 
 from napari_localize_psf.config import LocalizationConfig
 from napari_localize_psf.data import layer_calibration, open_images, prepare_preview
@@ -177,6 +181,24 @@ def test_store_root_opens_highest_resolution_without_xml(
     np.testing.assert_allclose(origin, (-2, 3, -4))
     for control in (widget.output, widget.results_path, widget.tracking_path):
         assert control.text() == str(tmp_path)
+
+    settings = tmp_path / "localization.json"
+    config.save(settings)
+    widget._config_path = settings
+    output = tmp_path / "batch results"
+    widget.output.setText(str(output))
+    widget._copy_batch_command()
+    command = widget.command_view.toPlainText()
+    batch_input = path if positions == 1 else path / str(positions - 1)
+    if sys.platform == "win32":
+        quoted_input = "'" + str(batch_input).replace("'", "''") + "'"
+        assert f"{quoted_input} --metadata " in command
+    else:
+        assert shlex.split(command)[3] == str(batch_input)
+    assert command == QApplication.clipboard().text()
+    assert LocalizationConfig.load(settings).input_uri == config.input_uri
+    assert set(tmp_path.iterdir()) == {path, settings}
+    assert not output.exists() and not widget._busy
 
 
 def test_npe2_manifest_instantiates_the_real_widget(viewer, qtbot):
