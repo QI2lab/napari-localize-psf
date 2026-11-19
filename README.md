@@ -15,7 +15,7 @@ In your active Python environment, run this from the repository root:
 uv pip install . napari-ome-zarr napari-tiff "napari[all]"
 ```
 
-This installs napari, the plugin, readers, and localize-psf's `master` GPU and
+This installs napari, the plugin, readers, and localize-psf's `main` GPU and
 example dependencies into that environment.
 
 ## Usage
@@ -63,7 +63,7 @@ with the NVIDIA GPU available.
 GitHub Actions runs unit and non-GPU integration tests on Linux and Windows.
 
 [napari]: https://napari.org/
-[localize-psf]: https://github.com/QI2lab/localize-psf/tree/master
+[localize-psf]: https://github.com/QI2lab/localize-psf/tree/main
 [uv]: https://docs.astral.sh/uv/
 
 ## Tracking

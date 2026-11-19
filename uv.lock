@@ -1060,8 +1060,8 @@ wheels = [
 
 [[package]]
 name = "localize-psf"
-version = "0.2.12"
-source = { git = "https://github.com/QI2lab/localize-psf.git?branch=master#0a6325cf6f92c6c3a283e99ac3d7914ffef5b3e2" }
+version = "0.3.0"
+source = { git = "https://github.com/QI2lab/localize-psf.git?branch=main#011024c7612e6d259097ea09e57f7651876bef1e" }
 dependencies = [
     { name = "joblib" },
     { name = "matplotlib" },
@@ -1466,7 +1466,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "localize-psf", extras = ["gpu", "example"], git = "https://github.com/QI2lab/localize-psf.git?branch=master" },
+    { name = "localize-psf", extras = ["gpu", "example"], git = "https://github.com/QI2lab/localize-psf.git?branch=main" },
     { name = "matplotlib", specifier = ">=3.9" },
     { name = "numpy", specifier = ">=2" },
     { name = "ome-zarr", specifier = ">=0.20.1" },
@@ -1481,7 +1481,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [{ name = "ruff", specifier = ">=0.16" }]
 test = [
-    { name = "localize-psf", git = "https://github.com/QI2lab/localize-psf.git?branch=master" },
+    { name = "localize-psf", git = "https://github.com/QI2lab/localize-psf.git?branch=main" },
     { name = "napari", extras = ["pyqt6"], specifier = ">=0.10.0" },
     { name = "napari-ome-zarr", specifier = ">=0.11.0" },
     { name = "napari-tiff", specifier = ">=0.1.6" },
