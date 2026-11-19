@@ -14,6 +14,8 @@ def package_versions() -> dict[str, str]:
         "localize-psf",
         "pygpufit",
         "ufish",
+        "spotiflow",
+        "torchvision",
         "torch",
         "cupy-cuda12x",
     ):

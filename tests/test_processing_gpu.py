@@ -8,11 +8,65 @@ from napari.utils.transforms import Affine
 from qtpy.QtCore import Qt
 from simulator import gaussian_image
 
-from napari_localize_psf.config import LocalizationConfig, PreviewSettings
+from napari_localize_psf.config import LocalizationConfig, PreviewSettings, SpotiflowSettings
 from napari_localize_psf.data import prepare_preview
 from napari_localize_psf.processing import fit_filter_mask, fit_spots, optical_parameters
 
 pytestmark = [pytest.mark.integration, pytest.mark.gpu]
+
+
+@pytest.mark.parametrize("plane", [False, True])
+def test_spotiflow_predictions_overlay_source_and_reuse_shared_filters(viewer, qtbot, plane):
+    from napari_localize_psf.widget import LocalizationWidget
+
+    image, _, spacing, origin = gaussian_image(plane)
+    source = viewer.add_image(
+        image, axis_labels=("z", "y", "x"), scale=spacing, translate=origin, units="um"
+    )
+    widget = LocalizationWidget(viewer)
+    qtbot.addWidget(widget)
+    widget.apply_config(
+        LocalizationConfig(
+            predictor="spotiflow",
+            fit_model="2d" if plane else "3d",
+            spotiflow=SpotiflowSettings(prob_thresh=0.2),
+            voxel_size_zyx_um=spacing,
+            origin_zyx_um=origin,
+            preview=PreviewSettings(
+                crop_zyx_px=(0, image.shape[0], 0, image.shape[1], 0, image.shape[2])
+            ),
+        )
+    )
+    widget.run_detection()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._detection is not None, widget.status.text()
+    points, heatmap = widget._detection
+    assert len(points) > 0
+    overlay = viewer.layers["Spotiflow priors"]
+    np.testing.assert_allclose(overlay.data, points)
+    for point in points:
+        np.testing.assert_allclose(overlay.data_to_world(point), source.data_to_world(point))
+    enhanced = viewer.layers["Spotiflow enhancement"]
+    assert enhanced.data.shape == image.shape
+    np.testing.assert_allclose(enhanced.data_to_world((0, 0, 0)), source.data_to_world((0, 0, 0)))
+    assert next(widget.detector._detector.parameters()).device.type == "cuda"
+    widget.edge_margin.setValue(max(image.shape))
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._detection[1] is heatmap and len(widget._detection[0]) == 0
+    widget.edge_margin.setValue(1)
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    np.testing.assert_array_equal(widget._detection[0], points)
+    streamed, _ = widget.detector.detect(image, widget.current_config(), cache=False)
+    np.testing.assert_allclose(streamed, points)
+    if not plane:
+        widget.predictor.setCurrentText("U-FISH")
+        widget.run_detection()
+        qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+        assert "U-FISH priors" in viewer.layers and "Spotiflow priors" not in viewer.layers
+        widget.predictor.setCurrentText("Spotiflow")
+        widget.run_detection()
+        qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+        assert "Spotiflow priors" in viewer.layers and "U-FISH priors" not in viewer.layers
 
 
 @pytest.mark.parametrize("geometry", ["volume", "plane", "xy"])

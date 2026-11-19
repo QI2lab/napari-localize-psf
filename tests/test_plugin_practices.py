@@ -42,7 +42,7 @@ from napari_localize_psf.processing import Detector
 from napari_localize_psf.runtime import package_versions
 Detector().release()
 assert package_versions()['napari-localize-psf']
-assert not {'torch', 'cupy', 'ufish'} & sys.modules.keys()
+assert not {'torch', 'cupy', 'ufish', 'spotiflow'} & sys.modules.keys()
 """,
         ],
         check=True,
@@ -63,7 +63,7 @@ import napari
 from napari_localize_psf.widget import LocalizationWidget
 viewer = napari.Viewer(show=False)
 widget = LocalizationWidget(viewer)
-assert not {'torch', 'cupy', 'ufish'} & sys.modules.keys()
+assert not {'torch', 'cupy', 'ufish', 'spotiflow'} & sys.modules.keys()
 widget.close()
 viewer.close()
 """,

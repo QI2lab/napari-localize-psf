@@ -1,13 +1,14 @@
 # napari-localize-psf
 
 A [napari] plugin for configuring QI2lab spot localization with [localize-psf].
-Preview U-FISH detections, tune bounded 2D/3D Gaussian fits with GPUfit, and
+Preview U-FISH or Spotiflow detections, tune bounded 2D/3D Gaussian fits with GPUfit, and
 export settings for batch processing.
 
 ## Installation
 
 Requires [uv], Python ≥3.12, and an NVIDIA GPU with a working driver on Linux
 x86-64 or Windows x64.
+Spotiflow currently requires Python <3.15.
 
 In your active Python environment, run this from the repository root:
 
@@ -15,7 +16,7 @@ In your active Python environment, run this from the repository root:
 uv pip install . napari-ome-zarr napari-tiff "napari[all]"
 ```
 
-This installs napari, the plugin, readers, and localize-psf's `main` GPU and
+This installs napari, the plugin, readers, and localize-psf's GPU and
 example dependencies into that environment.
 
 ## Usage
@@ -26,13 +27,17 @@ Open **Plugins → QI2lab Localization**.
    Output/results directories and file dialogs default to the dataset's parent folder.
 2. Confirm the axes, physical calibration, and preview region. Choose a 2D plane
    or 3D volume.
-3. Select a pretrained checkpoint from **U-FISH model**, or type a custom
+3. In **Predict**, choose **U-FISH** or **Spotiflow**. Model choices and prediction
+   options change with the predictor and 2D/3D mode. Spotiflow offers a model
+   probability threshold, minimum peak distance, subpixel prediction, and automatic
+   tiling; custom models use a trained model folder. For U-FISH, select a checkpoint
+   from **U-FISH model**, or type a custom
    weights path into the same dropdown. SunTag is the default; the list
    also includes the general all-data model and nine other fine-tuned checkpoints.
    The selected weights are saved in JSON for batch prediction.
    Preview U-FISH priors and adjust `blend_3d` and the intensity threshold (default 0.1).
    **GPU median noise suppression** is enabled by default and applies a 3×3×3 spatial
-   filter before U-FISH (3×3 in 2D). Each timepoint/channel is filtered independently;
+   filter before prediction (3×3 in 2D). Each timepoint/channel is filtered independently;
    Gaussian fitting uses the original counts.
    Nearby priors and duplicate fitted centers are merged automatically using
    the optical settings in **Fits**.

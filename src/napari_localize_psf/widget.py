@@ -41,7 +41,14 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from .config import FitFilters, LocalizationConfig, Parameter, PreviewSettings
+from .config import (
+    SPOTIFLOW_MODELS,
+    FitFilters,
+    LocalizationConfig,
+    Parameter,
+    PreviewSettings,
+    SpotiflowSettings,
+)
 from .data import (
     Preview,
     layer_calibration,
@@ -116,7 +123,7 @@ class LocalizationWidget(QWidget):
             ),
             (
                 "Data",
-                "U-FISH",
+                "Predict",
                 "Fits",
                 "Fit filters",
                 "Export / batch",
@@ -202,11 +209,19 @@ class LocalizationWidget(QWidget):
 
         form = QFormLayout(prior_page)
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self.predictor = QComboBox()
+        self.predictor.addItem("U-FISH", "ufish")
+        self.predictor.addItem("Spotiflow", "spotiflow")
+        form.addRow("Predictor", self.predictor)
+        self.ufish_controls = QWidget()
+        ufish_form = QFormLayout(self.ufish_controls)
+        ufish_form.setContentsMargins(0, 0, 0, 0)
+        form.addRow(self.ufish_controls)
         self.blend = QCheckBox("Blend enhancement along Z, Y, and X")
         self.blend.setChecked(True)
         self.blend.toggled.connect(self._invalidate_detection)
-        form.addRow(self.blend)
-        self.median_filter = QCheckBox("GPU median noise suppression before U-FISH")
+        ufish_form.addRow(self.blend)
+        self.median_filter = QCheckBox("GPU median noise suppression before prediction")
         self.median_filter.setChecked(defaults.ufish_median_filter)
         self.median_filter.setToolTip(
             "Apply a 3×3×3 spatial median filter (3×3 in 2D) with reflected borders. "
@@ -220,11 +235,11 @@ class LocalizationWidget(QWidget):
         self.threshold.setRange(0, 1e9)
         self.threshold.setValue(defaults.intensity_threshold)
         self.threshold.valueChanged.connect(self._invalidate_detection)
-        form.addRow("Intensity threshold", self.threshold)
+        ufish_form.addRow("Intensity threshold", self.threshold)
         self.collapse_priors = QCheckBox("Collapse nearby priors and fits")
         self.collapse_priors.setChecked(defaults.collapse_close_priors)
         self.collapse_priors.setToolTip(
-            "Keep the strongest U-FISH enhancement peak within the optical PSF width "
+            "Keep the strongest prediction peak within the optical PSF width "
             "axially and radially in XY, using NA, wavelength, "
             "refractive index and voxel calibration. Final fitted centers are also collapsed, "
             "preferring converged fits, valid covariance, then amplitude. Applies to preview "
@@ -275,20 +290,56 @@ class LocalizationWidget(QWidget):
             "The selected value is saved in JSON for preview and batch prediction."
         )
         self.weights.currentTextChanged.connect(self._invalidate_detection)
-        form.addRow("U-FISH model", self.weights)
+        ufish_form.addRow("U-FISH model", self.weights)
         self.inference_batch = QSpinBox()
         self.inference_batch.setRange(1, 4096)
         self.inference_batch.setValue(defaults.inference_batch_size)
         self.inference_batch.valueChanged.connect(self._invalidate_detection)
-        form.addRow("Inference batch size", self.inference_batch)
-        note = QLabel(
-            "The threshold is U-FISH's local-maxima response cutoff. Fits use the original counts. Threshold changes reuse the cached enhancement."
-        )
-        note.setWordWrap(True)
-        form.addRow(note)
+        ufish_form.addRow("Inference batch size", self.inference_batch)
+        self.spotiflow_controls = QWidget()
+        spotiflow_form = QFormLayout(self.spotiflow_controls)
+        spotiflow_form.setContentsMargins(0, 0, 0, 0)
+        form.insertRow(2, self.spotiflow_controls)
+        self.spotiflow_model = QComboBox()
+        self.spotiflow_model.setEditable(True)
+        self.spotiflow_model.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        spotiflow_form.addRow("Spotiflow model / folder", self.spotiflow_model)
+        self.spotiflow_auto_threshold = QCheckBox("Use model probability threshold")
+        self.spotiflow_auto_threshold.setChecked(True)
+        spotiflow_form.addRow(self.spotiflow_auto_threshold)
+        self.spotiflow_probability = QDoubleSpinBox()
+        self.spotiflow_probability.setDecimals(5)
+        self.spotiflow_probability.setRange(0, 1)
+        self.spotiflow_probability.setSingleStep(0.05)
+        self.spotiflow_probability.setValue(0.5)
+        self.spotiflow_probability.setEnabled(False)
+        self.spotiflow_auto_threshold.toggled.connect(self.spotiflow_probability.setDisabled)
+        spotiflow_form.addRow("Probability threshold", self.spotiflow_probability)
+        self.spotiflow_distance = QSpinBox()
+        self.spotiflow_distance.setRange(1, 1_000_000)
+        spotiflow_form.addRow("Minimum peak distance (pixels)", self.spotiflow_distance)
+        self.spotiflow_subpixel = QCheckBox("Subpixel prediction using stereographic flow")
+        self.spotiflow_subpixel.setChecked(True)
+        spotiflow_form.addRow(self.spotiflow_subpixel)
+        self.spotiflow_tile_size = QSpinBox()
+        self.spotiflow_tile_size.setRange(0, 1_000_000)
+        self.spotiflow_tile_size.setSingleStep(16)
+        self.spotiflow_tile_size.setSpecialValueText("Automatic")
+        spotiflow_form.addRow("Maximum tile size (pixels)", self.spotiflow_tile_size)
+        self.spotiflow_model.currentTextChanged.connect(self._invalidate_detection)
+        self.spotiflow_auto_threshold.toggled.connect(self._invalidate_detection)
+        self.spotiflow_probability.valueChanged.connect(self._invalidate_detection)
+        self.spotiflow_distance.valueChanged.connect(self._invalidate_detection)
+        self.spotiflow_subpixel.toggled.connect(self._invalidate_detection)
+        self.spotiflow_tile_size.valueChanged.connect(self._invalidate_detection)
+        self.prediction_note = QLabel()
+        self.prediction_note.setWordWrap(True)
+        form.addRow(self.prediction_note)
         self.detect_button = QPushButton("Preview U-FISH priors")
         self.detect_button.clicked.connect(self.run_detection)
         form.addRow(self.detect_button)
+        self.predictor.currentIndexChanged.connect(self._prediction_changed)
+        self._prediction_changed()
 
         form = QFormLayout(fit_page)
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
@@ -307,7 +358,7 @@ class LocalizationWidget(QWidget):
             self.parameters.setCellWidget(row_index, 3, QCheckBox())
         form.addRow(self.parameters)
         note = QLabel(
-            "Positions and widths: µm. Center bounds and initial values are offsets from each U-FISH prior, limited to its ROI. Blank values use upstream estimates / ROI limits. 2D fits one XY plane; cz and sz are fixed."
+            "Positions and widths: µm. Center bounds and initial values are offsets from each predicted prior, limited to its ROI. Blank values use upstream estimates / ROI limits. 2D fits one XY plane; cz and sz are fixed."
         )
         note.setWordWrap(True)
         form.addRow(note)
@@ -566,7 +617,7 @@ class LocalizationWidget(QWidget):
         self.tracking_status.setWordWrap(True)
         form.addRow(self.tracking_status)
 
-        self.status = QLabel("Select data, verify calibration, then preview U-FISH priors.")
+        self.status = QLabel("Select data, verify calibration, then preview spot priors.")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.cancel_button = QPushButton("Cancel")
@@ -725,7 +776,35 @@ class LocalizationWidget(QWidget):
         for row in (3, 5):
             self.parameters.setRowHidden(row, plane)
         self.blend.setEnabled(not plane)
+        self._prediction_changed()
         self._invalidate_data()
+
+    def _prediction_changed(self, *args: object) -> None:
+        """Show native predictor controls and dimension-compatible model choices."""
+        spotiflow = self.predictor.currentData() == "spotiflow"
+        self.ufish_controls.setVisible(not spotiflow)
+        self.spotiflow_controls.setVisible(spotiflow)
+        current = self.spotiflow_model.currentText()
+        models = SPOTIFLOW_MODELS[self.model.currentText()]
+        with QSignalBlocker(self.spotiflow_model):
+            self.spotiflow_model.clear()
+            self.spotiflow_model.addItems(["Model default", *models])
+            if current and (current in models or current not in sum(SPOTIFLOW_MODELS.values(), ())):
+                self.spotiflow_model.setCurrentText(current)
+        self.spotiflow_model.setToolTip(
+            f"Model default uses {models[0]}. Select a published model or enter a trained model folder."
+        )
+        name = self.predictor.currentText()
+        self.detect_button.setText(f"Preview {name} priors")
+        self.prediction_note.setText(
+            "Spotiflow uses a probability threshold and native subpixel peak detection. "
+            "Changing prediction options reruns inference; edge/optical filters reuse it. "
+            "Fits use original counts."
+            if spotiflow
+            else "U-FISH's threshold is a local-maxima response cutoff. Threshold changes reuse "
+            "the cached enhancement. Fits use original counts."
+        )
+        self._invalidate_detection()
 
     def _invalidate_data(self, *args: object) -> None:
         """Drop data-derived state while an in-flight result is marked stale."""
@@ -848,6 +927,18 @@ class LocalizationWidget(QWidget):
             ),
             source_layer=self._layer.name,
             fit_model=self.model.currentText(),
+            predictor=self.predictor.currentData(),
+            spotiflow=SpotiflowSettings(
+                model=None
+                if self.spotiflow_model.currentText() == "Model default"
+                else self.spotiflow_model.currentText().strip(),
+                prob_thresh=None
+                if self.spotiflow_auto_threshold.isChecked()
+                else self.spotiflow_probability.value(),
+                min_distance=self.spotiflow_distance.value(),
+                subpix=self.spotiflow_subpixel.isChecked(),
+                max_tile_size=self.spotiflow_tile_size.value() or None,
+            ),
             blend_3d=self.blend.isChecked(),
             ufish_median_filter=self.median_filter.isChecked(),
             intensity_threshold=self.threshold.value(),
@@ -915,7 +1006,7 @@ class LocalizationWidget(QWidget):
             selected = preview if preview is not None else prepare_preview(layer, config)
             return selected, self.detector.detect(selected[0], config)
 
-        self._start(compute, "U-FISH")
+        self._start(compute, self.predictor.currentText())
 
     def _choose_results(self) -> None:
         """Choose an existing upstream localization table through a parented dialog."""
@@ -1119,7 +1210,9 @@ class LocalizationWidget(QWidget):
         try:
             config = self.current_config()
             if self._preview is None or self._detection is None:
-                raise ValueError("Preview U-FISH priors for the current selection before fitting")
+                raise ValueError(
+                    f"Preview {self.predictor.currentText()} priors for the current selection before fitting"
+                )
         except Exception as error:
             self._errored(error)
             return
@@ -1166,18 +1259,23 @@ class LocalizationWidget(QWidget):
             name: getattr(layer, name)
             for name in ("scale", "translate", "rotate", "shear", "affine", "axis_labels", "units")
         }
-        if self._job_kind == "U-FISH":
+        if self._job_kind in {"U-FISH", "Spotiflow"}:
             preview, detection = cast(tuple[Preview, tuple[np.ndarray, np.ndarray]], value)
             self._preview, self._detection = preview, detection
             points, enhancement = detection
             source_config = preview[2]
+            name = self._job_kind
+            other = "Spotiflow" if name == "U-FISH" else "U-FISH"
+            for old_name in (f"{other} priors", f"{other} enhancement"):
+                if old_name in self.viewer.layers:
+                    self.viewer.layers.remove(old_name)
             self._replace_points(
-                "U-FISH priors",
+                f"{name} priors",
                 layer_coordinates(points, source_config),
                 transforms,
                 pd.DataFrame(),
             )
-            enhanced_name = "U-FISH enhancement"
+            enhanced_name = f"{name} enhancement"
             if enhanced_name in self.viewer.layers:
                 self.viewer.layers.remove(enhanced_name)
             # Enhancement is crop-local; express the crop origin in source pixels.
@@ -1212,7 +1310,9 @@ class LocalizationWidget(QWidget):
                 opacity=0.4,
                 metadata={"localization_output": True},
             )
-            self.status.setText(f"{len(points)} U-FISH priors. Tune threshold or preview GPU fits.")
+            self.status.setText(
+                f"{len(points)} {name} priors. Tune prediction or preview GPU fits."
+            )
         elif self._job_kind == "Batch results":
             features, metadata, path, axes, skipped = cast(BatchOverlay, value)
             points = source_coordinates(
@@ -1335,7 +1435,7 @@ class LocalizationWidget(QWidget):
             data,
             name=name,
             size=5,
-            face_color="cyan" if name.startswith("U-FISH") else "yellow",
+            face_color="cyan" if name.endswith("priors") else "yellow",
             **transforms,
             **kwargs,
             metadata={
@@ -1478,6 +1578,15 @@ class LocalizationWidget(QWidget):
             if config.input_uri != source:
                 raise ValueError("Open the configuration's input image before loading its settings")
         self.model.setCurrentText(config.fit_model)
+        self.predictor.setCurrentIndex(self.predictor.findData(config.predictor))
+        self.spotiflow_model.setCurrentText(config.spotiflow.model or "Model default")
+        self.spotiflow_auto_threshold.setChecked(config.spotiflow.prob_thresh is None)
+        self.spotiflow_probability.setValue(
+            0.5 if config.spotiflow.prob_thresh is None else config.spotiflow.prob_thresh
+        )
+        self.spotiflow_distance.setValue(config.spotiflow.min_distance)
+        self.spotiflow_subpixel.setChecked(config.spotiflow.subpix)
+        self.spotiflow_tile_size.setValue(config.spotiflow.max_tile_size or 0)
         self.axes.setText(config.preview.axes)
         self.path.setText(config.input_uri)
         self.blend.setChecked(config.blend_3d)
