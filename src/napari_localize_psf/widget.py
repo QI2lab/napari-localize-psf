@@ -188,15 +188,13 @@ class LocalizationWidget(QWidget):
             box.valueChanged.connect(self._invalidate_data)
             self.indices[key] = box
             form.addRow(label, box)
-        self.geometry = QTableWidget(3, 5)
-        self.geometry.setHorizontalHeaderLabels(
-            ["Start px", "Stop px", "Voxel µm", "Origin µm", "Fit ROI µm"]
-        )
+        self.geometry = QTableWidget(3, 4)
+        self.geometry.setHorizontalHeaderLabels(["Start px", "Stop px", "Voxel µm", "Origin µm"])
         self.geometry.setVerticalHeaderLabels(["Z", "Y", "X"])
         self.geometry.horizontalHeader().setStretchLastSection(True)
         self.geometry.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.geometry.setMaximumHeight(160)
-        self.geometry.itemChanged.connect(self._geometry_changed)
+        self.geometry.itemChanged.connect(self._invalidate_data)
         defaults = LocalizationConfig()
         for axis in range(3):
             for column, value in enumerate(
@@ -205,7 +203,6 @@ class LocalizationWidget(QWidget):
                     1,
                     defaults.voxel_size_zyx_um[axis],
                     0,
-                    defaults.fit_roi_size_um[axis],
                 )
             ):
                 self.geometry.setItem(axis, column, QTableWidgetItem(str(value)))
@@ -313,6 +310,19 @@ class LocalizationWidget(QWidget):
 
         form = QFormLayout(fit_page)
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self.fit_roi: dict[str, QDoubleSpinBox] = {}
+        for axis, value in zip("zyx", defaults.fit_roi_size_um, strict=True):
+            box = QDoubleSpinBox()
+            box.setDecimals(6)
+            box.setRange(0.000001, 1_000_000)
+            box.setSingleStep(0.1)
+            box.setValue(value)
+            box.setToolTip(
+                "Full fitting-window width centered on each prior. "
+                "Converted upstream to an odd number of voxels."
+            )
+            self.fit_roi[axis] = box
+            form.addRow(f"Fit ROI {axis.upper()} (µm)", box)
         self.parameters = QTableWidget(7, 4)
         self.parameters.setHorizontalHeaderLabels(["Lower", "Upper", "Initial", "Fixed"])
         self.parameter_names = tuple(defaults.fit_parameters)
@@ -778,17 +788,13 @@ class LocalizationWidget(QWidget):
         for row in (3, 5):
             self.parameters.setRowHidden(row, plane)
         self.blend.setEnabled(not plane)
+        self.fit_roi["z"].setEnabled(not plane)
         self._invalidate_data()
 
     def _invalidate_data(self, *args: object) -> None:
         """Drop data-derived state while an in-flight result is marked stale."""
         self._preview = None
         self._invalidate_detection()
-
-    def _geometry_changed(self, item: QTableWidgetItem) -> None:
-        """Fit ROI changes retain existing priors; crop/calibration changes do not."""
-        if item.column() != 4:
-            self._invalidate_data()
 
     def _channel_changed(self, value: int) -> None:
         """An unsplit channel axis directly determines the selected batch channel."""
@@ -1030,7 +1036,7 @@ class LocalizationWidget(QWidget):
             ufish_weights=self.weights.currentText().strip(),
             inference_batch_size=self.inference_batch.value(),
             fit_parameters=parameters,
-            fit_roi_size_um=tuple(float(self.geometry.item(i, 4).text()) for i in range(3)),
+            fit_roi_size_um=tuple(self.fit_roi[axis].value() for axis in "zyx"),
             voxel_size_zyx_um=spacing,
             origin_zyx_um=origin,
             estimator=self.estimator.currentText(),
@@ -1692,10 +1698,11 @@ class LocalizationWidget(QWidget):
                     *config.preview.crop_zyx_px[i * 2 : i * 2 + 2],
                     config.voxel_size_zyx_um[i],
                     config.origin_zyx_um[i],
-                    config.fit_roi_size_um[i],
                 )
             ):
                 self.geometry.item(i, j).setText(str(value))
+        for axis, value in zip("zyx", config.fit_roi_size_um, strict=True):
+            self.fit_roi[axis].setValue(value)
         for row, name in enumerate(self.parameter_names):
             setting = config.fit_parameters[name]
             for column, value in enumerate((setting.lower, setting.upper, setting.initial)):

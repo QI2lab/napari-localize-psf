@@ -84,6 +84,10 @@ def test_real_json_dialogs_are_parented_and_roundtrip(
     assert widget.threshold.value() == LocalizationConfig().intensity_threshold == 0.1
     assert widget.median_filter.isChecked() and widget.exclude_edges.isChecked()
     assert widget.edge_margin.value() == 1 and widget.edge_margin.isEnabled()
+    fit_page = widget.tabs.widget(2)
+    for axis, value in zip("zyx", (3.0, 1.5, 1.5), strict=True):
+        assert fit_page.isAncestorOf(widget.fit_roi[axis])
+        widget.fit_roi[axis].setValue(value)
     widget.median_filter.setChecked(False)
     widget.weights.setCurrentText(weights)
     widget.exclude_edges.setChecked(False)
@@ -107,6 +111,8 @@ def test_real_json_dialogs_are_parented_and_roundtrip(
     assert not LocalizationConfig.load(path).collapse_close_priors
     assert LocalizationConfig.load(path).fit_filters == widget.current_config().fit_filters
     assert LocalizationConfig.load(path).return_covariance
+    assert LocalizationConfig.load(path).fit_roi_size_um == (3.0, 1.5, 1.5)
+    widget.fit_roi["z"].setValue(1.0)
     widget.threshold.setValue(0.7)
     widget.median_filter.setChecked(True)
     widget.weights.setCurrentText(LocalizationConfig().ufish_weights)
@@ -128,6 +134,12 @@ def test_real_json_dialogs_are_parented_and_roundtrip(
     assert widget.fit_covariance.currentText() == "Pass"
     assert widget.fit_convergence.currentText() == "Fail"
     assert widget._config_path == path
+    assert tuple(box.value() for box in widget.fit_roi.values()) == (3.0, 1.5, 1.5)
+    widget.model.setCurrentText("2d")
+    assert not widget.fit_roi["z"].isEnabled()
+    assert widget.fit_roi["y"].isEnabled() and widget.fit_roi["x"].isEnabled()
+    widget.model.setCurrentText("3d")
+    assert widget.fit_roi["z"].isEnabled()
 
 
 def test_fit_filter_controls_validate_without_starting_gpu_work(viewer, qtbot):
