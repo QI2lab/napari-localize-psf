@@ -85,7 +85,7 @@ def test_frame_selection_minimum_length_empty_and_saved_results(localizations, f
             assert text.count(title) == 1
             if kind == "Step-size distribution":
                 xlabel = f"{'r' if component == 'r' else 'Δ' + component} (µm)"
-                ylabel = "Probability density (µm⁻¹)"
+                ylabel = "Probability per bin"
             else:
                 xlabel = "Lag (frames)" if frame_interval_s is None else "Lag time (s)"
                 ylabel = "MSD (µm²)"

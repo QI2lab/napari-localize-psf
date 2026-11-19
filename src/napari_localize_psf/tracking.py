@@ -233,8 +233,9 @@ def write_analysis_pdf(
 
     Each channel has six pages: r/Z/Y/X marginals, total ensemble MSD and all
     individual total MSD curves on one axes. All step pages share
-    the exported bin edges and identical x/y limits across channels. Distances
-    use µm, squared displacements µm², and lag times seconds when calibrated.
+    the exported bin edges and identical x/y limits across channels. Step
+    probabilities are unitless. Distances use µm, squared displacements µm²,
+    and lag times seconds when calibrated.
     Empty results produce labeled empty plots. No legends or narrative text
     are added. Figure/PDF objects are used directly without a GUI backend.
     """
@@ -253,7 +254,7 @@ def write_analysis_pdf(
         if distributions.empty
         else (float(distributions["bin_left_um"].min()), float(distributions["bin_right_um"].max()))
     )
-    peak = 0.0 if distributions.empty else float(distributions["density_per_um"].max())
+    peak = 0.0 if distributions.empty else float(distributions["probability"].max())
     y_limits = (0.0, peak * 1.05 if peak > 0 else 1.0)
     lag_column = "lag_frames" if frame_interval_s is None else "lag_time_s"
     lag_label = "Lag (frames)" if frame_interval_s is None else "Lag time (s)"
@@ -294,7 +295,7 @@ def write_analysis_pdf(
                                     bins["bin_left_um"].to_numpy(), bins["bin_right_um"].iloc[-1]
                                 ]
                                 axis.stairs(
-                                    bins["density_per_um"].to_numpy(),
+                                    bins["probability"].to_numpy(),
                                     edges,
                                     fill=True,
                                     color="tab:blue",
@@ -304,7 +305,7 @@ def write_analysis_pdf(
                                 xlim=x_limits,
                                 ylim=y_limits,
                                 xlabel=f"{'r' if component == 'r' else 'Δ' + component} (µm)",
-                                ylabel="Probability density (µm⁻¹)",
+                                ylabel="Probability per bin",
                             )
                         else:
                             column = f"msd_{component}_um2"
