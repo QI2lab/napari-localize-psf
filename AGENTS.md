@@ -8,7 +8,7 @@
 - Full tracking may run Trackpy on CPU and save tracks and motion analyses as
   Parquet, PDF plots, and tracking metadata as JSON. Reuse upstream scientific algorithms.
 - Resolve only Linux x86-64 and Windows x64, using the same declared GPU stack.
-- Use uv and the locked localize-psf `main` GPU and example dependencies.
+- Use uv and the locked localize-psf GPU and example dependencies.
 - Installation and backend selection must be automatic: use CUDA acceleration
   when available and CPU otherwise. Keep backend setup and selection out of
   user-facing instructions and controls.

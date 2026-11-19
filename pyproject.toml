@@ -96,7 +96,7 @@ select = ["E4", "E7", "E9", "F", "I", "UP", "ANN"]
 "tests/*" = ["ANN"]
 
 [tool.uv.sources]
-localize-psf = { git = "https://github.com/QI2lab/localize-psf.git", branch = "main" }
+localize-psf = { git = "https://github.com/QI2lab/localize-psf.git", branch = "fix/footprint-aware-rois" }
 torch = [
     { index = "pytorch-cu129", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]

@@ -1061,7 +1061,7 @@ wheels = [
 [[package]]
 name = "localize-psf"
 version = "0.3.2"
-source = { git = "https://github.com/QI2lab/localize-psf.git?branch=main#d82a923566500801189f469ed3bdbe96746769f0" }
+source = { git = "https://github.com/QI2lab/localize-psf.git?branch=fix%2Ffootprint-aware-rois#25ceaae06e1cbe0d0ef8ee56fc81d104ccf708e7" }
 dependencies = [
     { name = "joblib" },
     { name = "matplotlib" },
@@ -1466,7 +1466,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "localize-psf", extras = ["gpu", "example"], git = "https://github.com/QI2lab/localize-psf.git?branch=main" },
+    { name = "localize-psf", extras = ["gpu", "example"], git = "https://github.com/QI2lab/localize-psf.git?branch=fix%2Ffootprint-aware-rois" },
     { name = "matplotlib", specifier = ">=3.9" },
     { name = "numpy", specifier = ">=2" },
     { name = "ome-zarr", specifier = ">=0.20.1" },
@@ -1481,7 +1481,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [{ name = "ruff", specifier = ">=0.16" }]
 test = [
-    { name = "localize-psf", git = "https://github.com/QI2lab/localize-psf.git?branch=main" },
+    { name = "localize-psf", git = "https://github.com/QI2lab/localize-psf.git?branch=fix%2Ffootprint-aware-rois" },
     { name = "napari", extras = ["pyqt6"], specifier = ">=0.10.0" },
     { name = "napari-ome-zarr", specifier = ">=0.11.0" },
     { name = "napari-tiff", specifier = ">=0.1.6" },
