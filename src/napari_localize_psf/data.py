@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -61,38 +60,47 @@ def layer_coordinates(
 def open_images(viewer: Viewer, path: str) -> list[Image]:
     """Delegate file decoding entirely to the installed npe2 reader plugins.
 
-    OME-Zarr image groups and Bio-Formats containers retain reader ordering.
-    Split channel layers record their image-group URI and source channel.
+    OME-Zarr roots are resolved upstream before delegating each image to the
+    reader. Pyramid order comes from OME metadata; previews use its highest
+    resolution. Split channels record their image-group URI and source channel.
     """
     plugin = "napari-tiff" if path.lower().endswith((".tif", ".tiff")) else "napari-ome-zarr"
-    images = [layer for layer in viewer.open(path, plugin=plugin) if isinstance(layer, Image)]
+    paths = [path]
+    if plugin == "napari-ome-zarr":
+        from localize_psf.workflow import ome_zarr_image_paths
+
+        paths = ome_zarr_image_paths(path)
+    images = []
+    for image_path in paths:
+        images.extend(
+            layer for layer in viewer.open(image_path, plugin=plugin) if isinstance(layer, Image)
+        )
     prepare_image_layers(images, path)
     return images
 
 
 def prepare_image_layers(images: list[Image], path: str) -> None:
-    """Retain reader channel order and stored transforms for native or dock opening."""
+    """Retain reader order and transforms for native or dock opening.
+
+    Metadata records the resolved image-group ``input_uri``, original
+    ``container_uri`` and zero-based ``source_channel`` for batch export.
+    """
     prepared: list[tuple[str, list[Image], Affine | None]] = [(path, images, None)]
     if images and images[0].source.reader_plugin == "napari-ome-zarr":
-        from napari_ome_zarr.ome_zarr_reader import Bioformats2raw
+        from localize_psf.workflow import ome_zarr_image_paths
         from napari_ome_zarr.utils import count_layers_in_image
         from ome_zarr import OMEZarrMultiscale
         from zarr import open_group
 
-        # The reader currently omits ordinary image-group translations. Use its
-        # container traversal, channel counts and metadata models to associate
+        # The reader currently omits ordinary image-group translations. Use upstream
+        # container discovery, channel counts and metadata models to associate
         # each layer with its own image, without implementing another parser.
-        root = open_group(path, mode="r")
-        groups = (
-            [child.group for child in Bioformats2raw(root).children()]
-            if Bioformats2raw.matches(root)
-            else [root]
-        )
         prepared = []
         offset = 0
-        for group in groups:
+        for image_uri in ome_zarr_image_paths(path):
             if offset >= len(images):
                 break
+            group = open_group(image_uri, mode="r")
             multiscale = OMEZarrMultiscale.from_ome_zarr(group)
             axes = multiscale.images[0].axes
             transform = Affine(ndim=len(axes))
@@ -107,11 +115,6 @@ def prepare_image_layers(images: list[Image], path: str) -> None:
                 )
             transform = transform.set_slice([i for i, axis in enumerate(axes) if axis != "c"])
             count = count_layers_in_image(multiscale)["image_layers"]
-            image_uri = (
-                f"{path.rstrip('/')}/{group.path}"
-                if "://" in path
-                else str(Path(path) / group.path)
-            )
             prepared.append((image_uri, images[offset : offset + count], transform))
             offset += count
     for image_uri, layers, transform in prepared:
@@ -121,6 +124,7 @@ def prepare_image_layers(images: list[Image], path: str) -> None:
                 layer.translate = transform.translate
             layer.metadata["napari_localize_psf"] = {
                 "input_uri": image_uri,
+                "container_uri": path,
                 "source_channel": channel,
             }
 

@@ -94,6 +94,7 @@ def test_ome_zarr_reader_multichannel_calibration(viewer, qtbot, tmp_path, store
     np.testing.assert_allclose(origin, positions[selected_group])
     assert layers[-1].metadata["napari_localize_psf"] == {
         "input_uri": str(path / selected_group),
+        "container_uri": opened,
         "source_channel": 1,
     }
     # The same metadata adapter must also cover images opened through File > Open.
@@ -123,6 +124,59 @@ def test_ome_zarr_reader_multichannel_calibration(viewer, qtbot, tmp_path, store
     widget.layers.setCurrentIndex(widget.layers.findData(native[-1]))
     assert widget.output.text() == str(custom_output)
     assert widget.results_path.text() == widget.tracking_path.text() == str(custom_results)
+
+
+@pytest.mark.parametrize(
+    "positions,store_name",
+    [(1, "pyramid.ome.zarr"), (2, "pyramid.ome.zarr"), (1, "pyramid-store")],
+)
+def test_store_root_opens_highest_resolution_without_xml(
+    viewer, qtbot, tmp_path, positions, store_name
+):
+    from yaozarrs import DimSpec, v05
+    from yaozarrs.write.v05 import write_bioformats2raw
+
+    path = tmp_path / store_name
+    counts = np.arange(2 * 2 * 7 * 19 * 21, dtype=np.uint16).reshape(2, 2, 7, 19, 21)
+    dims = [
+        DimSpec(name=axis, size=size, scale=scale, unit="micrometer" if axis in "zyx" else None)
+        for axis, size, scale in zip(
+            "tczyx", counts.shape, (0.015, 1, 0.23, 0.11, 0.13), strict=True
+        )
+    ]
+    images = {}
+    for position in range(positions):
+        multiscale = v05.Multiscale.from_dims(dims, n_levels=2)
+        for dataset, name in zip(multiscale.datasets, ("fine", "coarse"), strict=True):
+            dataset.path = name
+            dataset.coordinateTransformations.append(
+                v05.TranslationTransformation(translation=[0, 0, -2, 3, -4])
+            )
+        images[str(position)] = (
+            v05.Image(multiscales=[multiscale]),
+            [counts + position, counts[:, :, ::2, ::2, ::2] + position],
+        )
+    write_bioformats2raw(path, images, writer="tensorstore")
+    assert not (path / "OME" / "METADATA.ome.xml").exists()
+    widget = LocalizationWidget(viewer)
+    qtbot.addWidget(widget)
+    widget.path.setText(str(path))  # The user chooses only the store root.
+    widget._open()
+    assert widget.layers.count() == 2 * positions, widget.status.text()
+    widget.layers.setCurrentIndex(widget.layers.count() - 1)
+    source = widget.layers.currentData()
+    assert source.source.reader_plugin == "napari-ome-zarr"
+    assert source.multiscale and source.data[0].shape == (2, 7, 19, 21)
+    config = widget.current_config()
+    assert config.input_uri == str(path / str(positions - 1))
+    assert config.preview.crop_zyx_px == (0, 7, 0, 19, 0, 21)
+    assert config.channel == 1
+    image, origin, _ = prepare_preview(source, config)
+    np.testing.assert_array_equal(image, counts[0, 1] + positions - 1)
+    np.testing.assert_allclose(config.voxel_size_zyx_um, (0.23, 0.11, 0.13))
+    np.testing.assert_allclose(origin, (-2, 3, -4))
+    for control in (widget.output, widget.results_path, widget.tracking_path):
+        assert control.text() == str(tmp_path)
 
 
 def test_npe2_manifest_instantiates_the_real_widget(viewer, qtbot):

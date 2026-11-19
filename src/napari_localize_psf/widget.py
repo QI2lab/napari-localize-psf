@@ -154,7 +154,7 @@ class LocalizationWidget(QWidget):
         form = QFormLayout(data_page)
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.path = QLineEdit()
-        self.path.setPlaceholderText("OME-TIFF file or OME-Zarr image-group path / URL")
+        self.path.setPlaceholderText("OME-TIFF file or OME-Zarr store / URL")
         form.addRow("Input", self.path)
         row = QHBoxLayout()
         for text, callback in (
@@ -699,7 +699,7 @@ class LocalizationWidget(QWidget):
         )
         metadata = layer.metadata.get("napari_localize_psf", {})
         self.path.setText(metadata.get("input_uri", layer.source.path or ""))
-        source = layer.source.path or metadata.get("input_uri", "")
+        source = metadata.get("container_uri", layer.source.path or metadata.get("input_uri", ""))
         if source and "://" not in source:
             dataset = Path(source).expanduser().absolute()
             # Nested OME-Zarr image groups share the store's parent directory.
@@ -1589,7 +1589,7 @@ class LocalizationWidget(QWidget):
     def _choose_zarr(self) -> None:
         path = QFileDialog.getExistingDirectory(
             self,
-            "Open OME-Zarr image group",
+            "Open OME-Zarr store",
             str(self._directory_source.parent) if self._directory_source else "",
         )
         if path:

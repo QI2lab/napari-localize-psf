@@ -14,7 +14,8 @@ uv pip install . napari-ome-zarr napari-tiff "napari[all]"
 
 Open **Plugins → QI2lab Localization** in napari.
 
-1. Load an OME-Zarr or OME-TIFF image and check its calibration.
+1. Load an OME-Zarr store or OME-TIFF image and check its calibration. The highest
+   resolution is selected automatically.
 2. Preview U-FISH detections and adjust the model, threshold, and edge filtering.
 3. Preview 2D or 3D Gaussian fits and tune their bounds and acceptance filters.
 4. Save the JSON settings and select **Copy batch command** to run localization
