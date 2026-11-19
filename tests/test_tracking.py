@@ -59,6 +59,7 @@ def test_frame_selection_minimum_length_empty_and_saved_results(localizations, f
         search_range_um=(0.3, 0.3, 0.3),
         memory=1,
         channel=1,
+        min_length=2,
         save=True,
         frame_interval_s=frame_interval_s,
     )
@@ -120,7 +121,7 @@ def test_frame_selection_minimum_length_empty_and_saved_results(localizations, f
 
 def test_analysis_keeps_channels_signed_components_gaps_and_all_frame_lags(localizations):
     path, _ = localizations
-    tracks, _ = link_localizations(path, search_range_um=(0.3, 0.3, 0.3), memory=1)
+    tracks, _ = link_localizations(path, search_range_um=(0.3, 0.3, 0.3), memory=1, min_length=2)
     outputs = analyze_tracks(tracks, frame_interval_s=0.015)
     steps = outputs["step_sizes.parquet"]
     assert len(steps) == 10
@@ -198,7 +199,7 @@ def test_analysis_keeps_channels_signed_components_gaps_and_all_frame_lags(local
 def test_empty_analysis_and_cancelled_analysis_preserve_saved_files(localizations, cancel_stage):
     path, _ = localizations
     tracks, metadata = link_localizations(
-        path, search_range_um=(0.3, 0.3, 0.3), memory=1, save=True
+        path, search_range_um=(0.3, 0.3, 0.3), memory=1, min_length=2, save=True
     )
     filenames = [
         "tracks.parquet",
@@ -218,6 +219,7 @@ def test_empty_analysis_and_cancelled_analysis_preserve_saved_files(localization
             path,
             search_range_um=(0.3, 0.3, 0.3),
             memory=1,
+            min_length=2,
             save=True,
             cancelled=cancelled,
             progress=cancel_analysis,

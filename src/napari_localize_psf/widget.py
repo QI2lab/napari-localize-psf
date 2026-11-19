@@ -503,7 +503,7 @@ class LocalizationWidget(QWidget):
             box = QDoubleSpinBox()
             box.setDecimals(6)
             box.setRange(0.000001, 1_000_000)
-            box.setValue(0.5)
+            box.setValue(1.0)
             self.tracking_ranges[axis] = box
             form.addRow(f"Max displacement {axis.upper()} (µm/frame)", box)
         self.tracking_dimensions.currentTextChanged.connect(
@@ -511,10 +511,11 @@ class LocalizationWidget(QWidget):
         )
         self.tracking_memory = QSpinBox()
         self.tracking_memory.setRange(0, 1_000_000)
+        self.tracking_memory.setValue(2)
         form.addRow("Allowed missing frames", self.tracking_memory)
         self.tracking_min_length = QSpinBox()
         self.tracking_min_length.setRange(1, 1_000_000)
-        self.tracking_min_length.setValue(2)
+        self.tracking_min_length.setValue(10)
         form.addRow("Minimum detections per track", self.tracking_min_length)
         self.tracking_adaptive_stop = QDoubleSpinBox()
         self.tracking_adaptive_stop.setDecimals(6)

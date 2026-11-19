@@ -40,6 +40,7 @@ def test_widget_tunes_executes_saves_and_reloads_tracks(viewer, qtbot, localizat
     assert widget.results_path.text() == str(path)
     widget.tracking_all_channels.setChecked(True)
     widget.tracking_memory.setValue(1)
+    widget.tracking_min_length.setValue(2)
     for box in widget.tracking_ranges.values():
         box.setValue(0.3)
     widget.tracking_frames["first"].setValue(1)

@@ -350,9 +350,9 @@ def write_analysis_pdf(
 def link_localizations(
     path: str | Path,
     *,
-    search_range_um: tuple[float, float, float],
-    memory: int = 0,
-    min_length: int = 2,
+    search_range_um: tuple[float, float, float] = (1.0, 1.0, 1.0),
+    memory: int = 2,
+    min_length: int = 10,
     dimensions: Literal["2d", "3d"] = "3d",
     first_frame: int | None = None,
     last_frame: int | None = None,

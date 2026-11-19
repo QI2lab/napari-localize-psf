@@ -75,7 +75,8 @@ already have separate channel layers; tracks use time-first image axes such as
 
 1. In **Tune**, select an inclusive, zero-based first/last frame range. Set the
    maximum displacement along Z/Y/X in micrometres per frame, allowed missing
-   frames, and minimum detections per track. Choose 2D XY or 3D linking. The
+   frames, and minimum detections per track. Defaults are 1.0 µm per axis,
+   2 missing frames, and 10 detections. Choose 2D XY or 3D linking. The
    standard Trackpy linker is used for diffusion, without velocity prediction.
    **Adaptive stop** optionally lets Trackpy reduce the displacement range for
    crowded subnetworks; zero disables it. Saved localization acceptance masks
