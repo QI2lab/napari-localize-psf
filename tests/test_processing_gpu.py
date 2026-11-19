@@ -6,13 +6,80 @@ import numpy as np
 import pytest
 from napari.utils.transforms import Affine
 from qtpy.QtCore import Qt
-from simulator import gaussian_image
+from simulator import bead_image, gaussian_image
 
 from napari_localize_psf.config import LocalizationConfig, PreviewSettings
 from napari_localize_psf.data import prepare_preview
 from napari_localize_psf.processing import fit_filter_mask, fit_spots, optical_parameters
 
 pytestmark = [pytest.mark.integration, pytest.mark.gpu]
+
+
+def test_optional_psf_analysis_uses_current_accepted_gpu_preview(viewer, qtbot):
+    from napari_localize_psf.widget import LocalizationWidget
+
+    image, _, spacing, origin = bead_image()
+    source = viewer.add_image(
+        np.stack([image * 100, image * 125]),
+        axis_labels=("t", "z", "y", "x"),
+        scale=(1, *spacing),
+        translate=(0, *origin),
+        units=("s", "um", "um", "um"),
+    )
+    widget = LocalizationWidget(viewer)
+    qtbot.addWidget(widget)
+    config = widget.current_config().model_copy(
+        update={
+            "fit_roi_size_um": (1.8, 1.5, 1.5),
+            "preview": PreviewSettings(axes="tzyx", timepoint=1, crop_zyx_px=(2, 23, 3, 68, 4, 69)),
+        }
+    )
+    widget.apply_config(config)
+    widget.run_detection()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._detection is not None, widget.status.text()
+    assert not widget.psf_button.isEnabled() and widget._psf_result is None
+    widget.run_fitting()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    fitted = viewer.layers["Gaussian fits"]
+    assert widget.psf_button.isEnabled(), widget.status.text()
+    assert widget._psf_result is None  # Analysis never runs automatically.
+    widget.amplitude_max.setText("30000")
+    widget.amplitude_max.editingFinished.emit()
+    expected = fitted.features.copy()
+    accepted = expected["success"] & expected["filter_pass"]
+    assert 3 <= accepted.sum() < len(expected)
+    for axis, size in zip("zyx", (8, 14, 14), strict=True):
+        widget.psf_roi[axis].setValue(size)
+    layer_count = len(viewer.layers)
+    widget.psf_button.click()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    result = widget._psf_result
+    assert result is not None, widget.psf_status.text()
+    volume = result["volume_results"][0, 0]
+    assert volume["average_psf"].shape == (9, 15, 15)
+    assert volume["focus"]["available"]
+    assert len(volume["focus"]["residual_after_plane_um"]) == accepted.sum()
+    assert result["metadata"]["origin_zyx_um"] == widget._preview[1]
+    assert widget.psf_plots.count() == 4
+    assert len(viewer.layers) == layer_count and viewer.layers["Gaussian fits"] == fitted
+    assert fitted.features.equals(expected)
+    widget.psf_roi["x"].setValue(17)
+    assert widget._psf_result is None and not widget.psf_plots.count()
+    widget.psf_button.click()
+    widget.cancel()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._psf_result is None
+    widget.amplitude_min.setText("1e9")
+    widget.amplitude_min.editingFinished.emit()
+    assert not widget.psf_button.isEnabled()
+    widget._reset_fit_filters()
+    assert widget.psf_button.isEnabled() and widget._psf_result is None
+    widget.psf_button.click()
+    source.translate = (0, -3, 4, -5)
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._psf_result is None and not widget.psf_button.isEnabled()
+    assert "Result discarded" in widget.status.text()
 
 
 @pytest.mark.parametrize("geometry", ["volume", "plane", "xy"])

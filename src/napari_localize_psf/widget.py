@@ -9,7 +9,7 @@ from concurrent.futures import CancelledError
 from functools import partial
 from pathlib import Path
 from threading import Event
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -41,7 +41,13 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from .config import FitFilters, LocalizationConfig, Parameter, PreviewSettings
+from .config import (
+    DEFAULT_PSF_ROI_SIZE_PX,
+    FitFilters,
+    LocalizationConfig,
+    Parameter,
+    PreviewSettings,
+)
 from .data import (
     Preview,
     layer_calibration,
@@ -60,11 +66,13 @@ if TYPE_CHECKING:
     from napari.layers import Points
 
 type BatchOverlay = tuple[pd.DataFrame, dict[str, object], str, str, int]
+type PSFAnalysis = dict[str, Any]
 type JobResult = (
     dict[str, tuple[float, float, float]]
     | tuple[Preview, tuple[np.ndarray, np.ndarray]]
     | tuple[Preview, FitResults, LocalizationConfig]
     | BatchOverlay
+    | PSFAnalysis
 )
 
 _SOURCE_EVENTS = ("data", "scale", "translate", "affine", "rotate", "shear", "units", "axis_labels")
@@ -83,7 +91,11 @@ class LocalizationWidget(QWidget):
         self._preview: Preview | None = None
         self._detection: tuple[np.ndarray, np.ndarray] | None = None
         self._fit_layer: Points | None = None
+        self._psf_result: PSFAnalysis | None = None
         self.fit_filter_status = QLabel("Run a GPU fit preview to filter its results.", self)
+        self.psf_button = QPushButton("Average PSF and fit field curvature", self)
+        self.psf_status = QLabel("Run a 3D fit preview to enable PSF analysis.", self)
+        self.psf_plots = QVBoxLayout()
         self._layer: Image | None = None
         self._revision = 0
         self._job_revision = 0
@@ -101,9 +113,16 @@ class LocalizationWidget(QWidget):
         layout = QVBoxLayout(self)
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
-        data_page, prior_page, fit_page, filter_page, export_page, results_page, tracking_page = (
-            QWidget() for _ in range(7)
-        )
+        (
+            data_page,
+            prior_page,
+            fit_page,
+            filter_page,
+            export_page,
+            results_page,
+            tracking_page,
+            psf_page,
+        ) = (QWidget() for _ in range(8))
         for page, title in zip(
             (
                 data_page,
@@ -113,6 +132,7 @@ class LocalizationWidget(QWidget):
                 export_page,
                 results_page,
                 tracking_page,
+                psf_page,
             ),
             (
                 "Data",
@@ -122,6 +142,7 @@ class LocalizationWidget(QWidget):
                 "Export / batch",
                 "Batch results",
                 "Tracking",
+                "PSF / field",
             ),
             strict=True,
         ):
@@ -566,6 +587,35 @@ class LocalizationWidget(QWidget):
         self.tracking_status.setWordWrap(True)
         form.addRow(self.tracking_status)
 
+        psf_layout = QVBoxLayout(psf_page)
+        form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        psf_layout.addLayout(form)
+        note = QLabel(
+            "Optional calibration from the current 3D fit preview, using successful fits "
+            "that pass Fit filters. Uses original counts from the selected frame, channel "
+            "and crop. Field fitting requires at least three noncollinear beads."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+        self.psf_roi: dict[str, QSpinBox] = {}
+        for axis, size in zip("zyx", DEFAULT_PSF_ROI_SIZE_PX, strict=True):
+            box = QSpinBox()
+            box.setRange(1, 1001)
+            box.setSingleStep(2)
+            box.setValue(size)
+            box.setToolTip("Centered averaging window; even values round up to an odd size.")
+            box.valueChanged.connect(self._clear_psf_analysis)
+            self.psf_roi[axis] = box
+            form.addRow(f"PSF window {axis.upper()} (voxels)", box)
+        self.psf_button.setEnabled(False)
+        self.psf_button.clicked.connect(self.run_psf_analysis)
+        form.addRow(self.psf_button)
+        self.psf_status.setWordWrap(True)
+        form.addRow(self.psf_status)
+        psf_layout.addLayout(self.psf_plots)
+        psf_layout.addStretch()
+
         self.status = QLabel("Select data, verify calibration, then preview U-FISH priors.")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -592,6 +642,9 @@ class LocalizationWidget(QWidget):
         """Keep source selection stable when result layers are added."""
         if self._closing:
             return
+        if self._fit_layer is not None and self._fit_layer not in self.viewer.layers:
+            self._fit_layer = None
+            self._clear_psf_analysis()
         images = [
             layer
             for layer in self.viewer.layers
@@ -748,6 +801,7 @@ class LocalizationWidget(QWidget):
         self._detection = None
         self._fit_layer = None
         self.fit_filter_status.setText("Run a GPU fit preview to filter its results.")
+        self._clear_psf_analysis()
 
     def _prior_policy_changed(self, *args: object) -> None:
         """Refresh existing priors through the shared detector's cached enhancement."""
@@ -772,6 +826,7 @@ class LocalizationWidget(QWidget):
         """Apply the shared mask through napari's public per-point visibility API."""
         if self._closing:
             return
+        self._clear_psf_analysis()
         try:
             filters = self._fit_filter_settings()
             if filters.covariance != "all":
@@ -783,6 +838,8 @@ class LocalizationWidget(QWidget):
             features = layer.features
             if filters.covariance != "all" and "covariance_valid" not in features:
                 layer.shown = np.zeros(len(layer.data), dtype=bool)
+                layer.features = features.assign(filter_pass=layer.shown)
+                self._clear_psf_analysis()
                 self.fit_filter_status.setText(
                     "Covariance diagnostics were not computed. Enable covariance and rerun GPU fits."
                 )
@@ -806,6 +863,10 @@ class LocalizationWidget(QWidget):
             self.fit_filter_status.setText(f"Showing {int(mask.sum())} / {len(mask)} fits.")
         except Exception as error:
             self.fit_filter_status.setText(str(error))
+            self._clear_psf_analysis()
+            self.psf_button.setEnabled(False)
+            return
+        self._clear_psf_analysis()
 
     def _reset_fit_filters(self) -> None:
         """Restore all preview fits and the default batch acceptance policy."""
@@ -815,6 +876,118 @@ class LocalizationWidget(QWidget):
             self.fit_convergence.setCurrentIndex(0)
             self.fit_covariance.setCurrentIndex(0)
         self._apply_fit_filters()
+
+    def _clear_psf_analysis(self, *args: object) -> None:
+        """Drop stale plots and enable analysis only for accepted 3D preview fits."""
+        if self._busy and self._job_kind == "PSF analysis":
+            self._revision += 1
+        self._psf_result = None
+        while self.psf_plots.count():
+            widget = self.psf_plots.takeAt(0).widget()
+            widget.deleteLater()
+        layer = self._fit_layer
+        ready = (
+            not self._closing
+            and self._preview is not None
+            and layer is not None
+            and layer in self.viewer.layers
+            and layer.metadata["configuration"]["fit_model"] == "3d"
+            and min(self._preview[0].shape) > 1
+            and (layer.features["success"] & layer.features.get("filter_pass", False)).any()
+        )
+        self.psf_button.setEnabled(bool(ready))
+        self.psf_status.setText(
+            "Ready to analyze accepted 3D preview fits."
+            if ready
+            else "Run a 3D fit preview with successful fits passing Fit filters to enable PSF analysis."
+        )
+
+    def run_psf_analysis(self) -> None:
+        """Analyze captured original ZYX counts and physical fit centers on a worker."""
+        if self._busy or self._closing:
+            return
+        if not self.psf_button.isEnabled():
+            self.status.setText(self.psf_status.text())
+            return
+        preview, layer = self._preview, self._fit_layer
+        assert preview is not None and layer is not None
+        config = LocalizationConfig.model_validate(layer.metadata["configuration"])
+        features = layer.features
+        fits = {
+            "fit_params": features[list(self.parameter_names)].to_numpy(copy=True),
+            "success": features["success"].to_numpy(copy=True),
+            "filter_pass": features["filter_pass"].to_numpy(copy=True),
+        }
+        size = tuple(self.psf_roi[axis].value() for axis in "zyx")
+        self._clear_psf_analysis()
+
+        def compute() -> PSFAnalysis:
+            from localize_psf.workflow import analyze_psf
+
+            return analyze_psf(
+                preview[0], fits, config, roi_size_zyx_px=size, origin_zyx_um=preview[1]
+            )
+
+        self.psf_status.setText("Averaging PSFs and fitting the focus surface…")
+        self._start(compute, "PSF analysis")
+
+    def _show_psf_analysis(self, result: PSFAnalysis) -> None:
+        """Embed PSF slices in relative µm and upstream field plots on the GUI thread."""
+        import matplotlib.pyplot as plt
+        from localize_psf.workflow import plot_calibration
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
+        from matplotlib.figure import Figure
+
+        volume = result["volume_results"][0, 0]
+        psf = volume["average_psf"]
+        coords = [coordinate.ravel() for coordinate in volume["average_psf_coords_zyx_um"]]
+        spacing = result["metadata"]["voxel_size_zyx_um"]
+        figure = Figure(figsize=(9, 3.5), layout="constrained")
+        figure.suptitle("Average PSF")
+        for axis, (horizontal, vertical, image, title) in zip(
+            figure.subplots(1, 3),
+            (
+                (2, 1, psf[psf.shape[0] // 2], "XY"),
+                (2, 0, psf[:, psf.shape[1] // 2], "XZ"),
+                (1, 0, psf[:, :, psf.shape[2] // 2], "YZ"),
+            ),
+            strict=True,
+        ):
+            extent = [
+                bound
+                for dimension in (horizontal, vertical)
+                for bound in (
+                    coords[dimension][0] - spacing[dimension] / 2,
+                    coords[dimension][-1] + spacing[dimension] / 2,
+                )
+            ]
+            axis.imshow(image, origin="lower", extent=extent, cmap="gray", vmin=0, vmax=1)
+            axis.set(
+                title=title, xlabel=f"{'ZYX'[horizontal]} (µm)", ylabel=f"{'ZYX'[vertical]} (µm)"
+            )
+        figures = [figure, *plot_calibration(result).values()]
+        for index, figure in enumerate(figures):
+            # Detach upstream pyplot managers before embedding in this dock.
+            plt.close(figure)
+            figure.set_size_inches(9 if index == 0 else 13, 3.5 if index == 0 else 5)
+            canvas = FigureCanvasQTAgg(figure)
+            canvas.setMinimumSize(720 if index == 0 else 1100, 320 if index == 0 else 450)
+            self.psf_plots.addWidget(NavigationToolbar2QT(canvas, self))
+            self.psf_plots.addWidget(canvas)
+            canvas.draw_idle()
+        self._psf_result = result
+        fits, focus = result["fit_results"], volume["focus"]
+        count = int(np.sum(fits["success"] & fits.get("filter_pass", True)))
+        text = f"Averaged {count} PSFs. "
+        text += (
+            f"Focus slope {focus['gradient_magnitude']:.4g} µm/µm; "
+            f"field curvature {focus['curvature_per_um']:.4g} µm⁻¹ "
+            f"({'converged' if focus['curvature_success'] else 'not converged'})."
+            if focus["available"]
+            else f"Field fit unavailable: {focus['reason']}."
+        )
+        self.psf_status.setText(text)
+        self.status.setText(text)
 
     def current_config(self) -> LocalizationConfig:
         """Snapshot and validate all controls before starting any worker or export."""
@@ -1137,6 +1310,8 @@ class LocalizationWidget(QWidget):
             )
             return preview, result, config
 
+        if not self._busy:
+            self._clear_psf_analysis()
         self._start(compute, "GPUfit")
 
     @Slot(object)
@@ -1148,6 +1323,8 @@ class LocalizationWidget(QWidget):
             self.status.setText(
                 "Result discarded because the job was cancelled or the source changed."
             )
+            if self._job_kind == "PSF analysis":
+                self.psf_status.setText(self.status.text())
             return
         layer = self._layer
         if self._job_kind == "Optical bounds":
@@ -1162,6 +1339,12 @@ class LocalizationWidget(QWidget):
             return
         if layer is None:
             return
+        if self._job_kind == "PSF analysis":
+            try:
+                self._show_psf_analysis(cast(PSFAnalysis, value))
+            except Exception as error:
+                self._errored(error)
+            return
         transforms = {
             name: getattr(layer, name)
             for name in ("scale", "translate", "rotate", "shear", "affine", "axis_labels", "units")
@@ -1169,6 +1352,8 @@ class LocalizationWidget(QWidget):
         if self._job_kind == "U-FISH":
             preview, detection = cast(tuple[Preview, tuple[np.ndarray, np.ndarray]], value)
             self._preview, self._detection = preview, detection
+            self._fit_layer = None
+            self._clear_psf_analysis()
             points, enhancement = detection
             source_config = preview[2]
             self._replace_points(
@@ -1356,6 +1541,9 @@ class LocalizationWidget(QWidget):
         if self._busy and self._job_kind.startswith("Tracking "):
             self.tracking_status.setText(text)
             self.tracking_preview_status.setText(text)
+        if self._busy and self._job_kind == "PSF analysis":
+            self._clear_psf_analysis()
+            self.psf_status.setText(text)
         if not isinstance(error, CancelledError):
             show_error(text)
 
@@ -1588,6 +1776,7 @@ class LocalizationWidget(QWidget):
             for name in _SOURCE_EVENTS:
                 getattr(self._layer.events, name).disconnect(self._source_changed)
         self._layer = self._preview = self._detection = self._fit_layer = None
+        self._clear_psf_analysis()
         self.layers.clear()
         if self._worker is not None:
             self._worker.quit()

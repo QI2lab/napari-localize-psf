@@ -1,5 +1,19 @@
 """Compatibility imports for the upstream configuration contract."""
 
-from localize_psf.config import FitFilters, LocalizationConfig, Parameter, Positive, PreviewSettings
+from localize_psf.config import (
+    DEFAULT_PSF_ROI_SIZE_PX,
+    FitFilters,
+    LocalizationConfig,
+    Parameter,
+    Positive,
+    PreviewSettings,
+)
 
-__all__ = ["FitFilters", "LocalizationConfig", "Parameter", "Positive", "PreviewSettings"]
+__all__ = [
+    "DEFAULT_PSF_ROI_SIZE_PX",
+    "FitFilters",
+    "LocalizationConfig",
+    "Parameter",
+    "Positive",
+    "PreviewSettings",
+]

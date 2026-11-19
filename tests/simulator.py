@@ -18,3 +18,21 @@ def gaussian_image(plane: bool = False) -> tuple[np.ndarray, np.ndarray, tuple, 
     else:
         image = gaussian3d_psf_model().model(coords, truth)
     return np.asarray(image, dtype=np.float32), truth, spacing, origin
+
+
+def bead_image() -> tuple[np.ndarray, np.ndarray, tuple, tuple]:
+    """Return five separated beads in original ZYX counts with physical Gaussian parameters."""
+    shape, spacing, origin = (25, 71, 71), (0.2, 0.1, 0.1), (-2.0, 3.0, -4.0)
+    pixels = np.array(
+        [[12.3, 15, 15], [13, 15, 55], [11.7, 55, 15], [12.6, 55, 55], [12.2, 35, 35]]
+    )
+    centers = origin + pixels * spacing
+    parameters = np.array(
+        [
+            [amplitude, *center[::-1], 0.15, 0.3, 5]
+            for amplitude, center in zip((100, 110, 120, 130, 400), centers, strict=True)
+        ]
+    )
+    coords, model = get_coords(shape, spacing, origin=origin), gaussian3d_psf_model()
+    image = 5 + sum(model.model(coords, parameters) - parameters[6] for parameters in parameters)
+    return np.asarray(image, dtype=np.float32), parameters, spacing, origin
