@@ -96,7 +96,7 @@ select = ["E4", "E7", "E9", "F", "I", "UP", "ANN"]
 "tests/*" = ["ANN"]
 
 [tool.uv.sources]
-localize-psf = { git = "https://github.com/QI2lab/localize-psf.git", branch = "opm-ptv" }
+localize-psf = { git = "https://github.com/QI2lab/localize-psf.git", branch = "master" }
 torch = [
     { index = "pytorch-cu129", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
@@ -104,7 +104,7 @@ torch = [
 # uv build settings belong to the consuming project, so explicitly reuse the
 # localize-psf CUDA toolchain when building its transitive GPUfit dependency.
 [tool.uv.extra-build-dependencies]
-pygpufit = ["localize-psf-build-support @ git+https://github.com/QI2lab/localize-psf.git@opm-ptv#subdirectory=build_support"]
+pygpufit = ["localize-psf-build-support @ git+https://github.com/QI2lab/localize-psf.git@master#subdirectory=build_support"]
 
 [tool.uv.extra-build-variables]
 pygpufit = { CMAKE_EXECUTABLE = "localize-gpu-cmake", CMAKE_GENERATOR = "Ninja" }

@@ -298,7 +298,7 @@ def test_results_dialog_selects_file_without_opening_an_image(
     path.touch()
     select_real_file(path, widget)
     widget._choose_results()
-    assert widget.results_path.text() == str(path)
+    assert Path(widget.results_path.text()) == path
     assert not widget.results_button.isEnabled()
     assert widget._worker is None and len(viewer.layers) == 0
 

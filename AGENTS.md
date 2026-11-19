@@ -8,7 +8,7 @@
 - Full tracking may run Trackpy on CPU and save tracks and motion analyses as
   Parquet, PDF plots, and tracking metadata as JSON. Reuse upstream scientific algorithms.
 - Resolve only Linux x86-64 and Windows x64, using the same declared GPU stack.
-- Use uv and the locked localize-psf `opm-ptv` GPU and example dependencies.
+- Use uv and the locked localize-psf `master` GPU and example dependencies.
 - Follow upstream's Python minimum (currently >=3.12) without a plugin-specific
   minor-version ceiling or interpreter pin. User installation targets an existing
   active napari environment. Keep development and test dependencies in the root
