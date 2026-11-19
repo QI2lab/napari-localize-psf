@@ -4,9 +4,6 @@ A [napari] plugin for tuning spot detection and Gaussian localization with [loca
 
 ## Installation
 
-Requires [uv], Python ≥3.12, and an NVIDIA GPU with a working driver on Linux
-x86-64 or Windows x64.
-
 From this repository, install into your active napari environment:
 
 ```bash
@@ -29,4 +26,3 @@ include tracks, step-size and MSD analyses as Parquet files, and a PDF plot repo
 
 [napari]: https://napari.org/
 [localize-psf]: https://github.com/QI2lab/localize-psf
-[uv]: https://docs.astral.sh/uv/

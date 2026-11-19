@@ -9,6 +9,9 @@
   Parquet, PDF plots, and tracking metadata as JSON. Reuse upstream scientific algorithms.
 - Resolve only Linux x86-64 and Windows x64, using the same declared GPU stack.
 - Use uv and the locked localize-psf `main` GPU and example dependencies.
+- Installation and backend selection must be automatic: use CUDA acceleration
+  when available and CPU otherwise. Keep backend setup and selection out of
+  user-facing instructions and controls.
 - Follow upstream's Python minimum (currently >=3.12) without a plugin-specific
   minor-version ceiling or interpreter pin. User installation targets an existing
   active napari environment. Keep development and test dependencies in the root
