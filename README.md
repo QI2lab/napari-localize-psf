@@ -30,7 +30,8 @@ Open **Plugins → QI2lab Localization**.
 3. In **Predict**, choose **U-FISH** or **Spotiflow**. Model choices and prediction
    options change with the predictor and 2D/3D mode. Spotiflow offers a model
    probability threshold, minimum peak distance, subpixel prediction, and automatic
-   tiling; custom models use a trained model folder. For U-FISH, select a checkpoint
+   tiling; its 2D default is `fluo_live`. Custom models use a trained model folder.
+   For U-FISH, select a checkpoint
    from **U-FISH model**, or type a custom
    weights path into the same dropdown. SunTag is the default; the list
    also includes the general all-data model and nine other fine-tuned checkpoints.

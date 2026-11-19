@@ -1246,7 +1246,7 @@ wheels = [
 [[package]]
 name = "localize-psf"
 version = "0.3.1"
-source = { git = "https://github.com/QI2lab/localize-psf.git?branch=feat%2Fspotiflow#9247b55e06434946b3f85569ee89f23bad9c9477" }
+source = { git = "https://github.com/QI2lab/localize-psf.git?branch=feat%2Fspotiflow#c15b072734c5ed6d8298b4d865a5df0cac33a63c" }
 dependencies = [
     { name = "joblib" },
     { name = "matplotlib" },
