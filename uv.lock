@@ -1061,7 +1061,7 @@ wheels = [
 [[package]]
 name = "localize-psf"
 version = "0.3.2"
-source = { git = "https://github.com/QI2lab/localize-psf.git?branch=feat%2Fautomated-tilted-gaussian#a3b3a5e579fb6f587c83ea883af57bfb8cd8b9c1" }
+source = { git = "https://github.com/QI2lab/localize-psf.git?branch=feat%2Fautomated-tilted-gaussian#1bf7f939feb6d0efae8da4f81b4dd5e89ad1d1f6" }
 dependencies = [
     { name = "joblib" },
     { name = "matplotlib" },

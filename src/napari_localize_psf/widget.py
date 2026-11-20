@@ -352,11 +352,11 @@ class LocalizationWidget(QWidget):
         form.addRow(note)
         self.optics: dict[str, QDoubleSpinBox] = {}
         for key, label, value in (
-            ("numerical_aperture", "NA", 1.35),
-            ("wavelength_um", "Wavelength µm", 0.515),
-            ("refractive_index", "Refractive index", 1.4),
-            ("sigma_low", "Lower sigma factor", 0.5),
-            ("sigma_high", "Upper sigma factor", 2),
+            ("numerical_aperture", "NA", defaults.numerical_aperture),
+            ("wavelength_um", "Wavelength µm", defaults.wavelength_um),
+            ("refractive_index", "Refractive index", defaults.refractive_index),
+            ("sigma_low", "Lower sigma factor", defaults.relative_sigma_range[0]),
+            ("sigma_high", "Upper sigma factor", defaults.relative_sigma_range[1]),
         ):
             box = QDoubleSpinBox()
             box.setDecimals(5)
