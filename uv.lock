@@ -1061,7 +1061,7 @@ wheels = [
 [[package]]
 name = "localize-psf"
 version = "0.3.2"
-source = { git = "https://github.com/QI2lab/localize-psf.git?branch=feat%2Fautomated-tilted-gaussian#1bf7f939feb6d0efae8da4f81b4dd5e89ad1d1f6" }
+source = { git = "https://github.com/QI2lab/localize-psf.git?branch=main#b771a3ffcfe583750544d8c372bdc812f81dde7d" }
 dependencies = [
     { name = "joblib" },
     { name = "matplotlib" },
@@ -1430,7 +1430,7 @@ wheels = [
 
 [[package]]
 name = "napari-localize-psf"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "localize-psf", extra = ["example", "gpu"] },
@@ -1467,7 +1467,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "localize-psf", extras = ["gpu", "example"], git = "https://github.com/QI2lab/localize-psf.git?branch=feat%2Fautomated-tilted-gaussian" },
+    { name = "localize-psf", extras = ["gpu", "example"], git = "https://github.com/QI2lab/localize-psf.git?branch=main" },
     { name = "matplotlib", specifier = ">=3.9" },
     { name = "numpy", specifier = ">=2" },
     { name = "ome-zarr", specifier = ">=0.20.1" },
@@ -1482,7 +1482,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [{ name = "ruff", specifier = ">=0.16" }]
 test = [
-    { name = "localize-psf", git = "https://github.com/QI2lab/localize-psf.git?branch=feat%2Fautomated-tilted-gaussian" },
+    { name = "localize-psf", git = "https://github.com/QI2lab/localize-psf.git?branch=main" },
     { name = "napari", extras = ["pyqt6"], specifier = ">=0.10.0" },
     { name = "napari-ome-zarr", specifier = ">=0.11.0" },
     { name = "napari-tiff", specifier = ">=0.1.6" },
