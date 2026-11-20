@@ -34,6 +34,11 @@ dependencies = [
 napari-localize-psf = "napari_localize_psf:napari.yaml"
 
 [dependency-groups]
+app = [
+    "napari[all]>=0.10.0",
+    "napari-ome-zarr>=0.11.0",
+    "napari-tiff>=0.1.6",
+]
 dev = ["ruff>=0.16"]
 test = [
     "localize-psf",
@@ -53,7 +58,7 @@ test = [
 ]
 
 [tool.uv]
-default-groups = ["dev"]
+default-groups = ["app"]
 environments = [
     "sys_platform == 'linux' and platform_machine == 'x86_64'",
     "sys_platform == 'win32' and platform_machine == 'AMD64'",

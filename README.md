@@ -4,13 +4,17 @@ A [napari] plugin for tuning spot detection and Gaussian localization with [loca
 
 ## Installation
 
-From this repository, install into your active napari environment:
+From this repository, create the environment and install the plugin:
 
 ```bash
-uv pip install . napari-ome-zarr napari-tiff "napari[all]"
+uv sync
 ```
 
 ## Usage
+
+```bash
+uv run napari
+```
 
 Open **Plugins → QI2lab Localization** in napari.
 
