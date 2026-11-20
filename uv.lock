@@ -1061,7 +1061,7 @@ wheels = [
 [[package]]
 name = "localize-psf"
 version = "0.3.2"
-source = { git = "https://github.com/QI2lab/localize-psf.git?branch=fix%2Ffootprint-aware-rois#25ceaae06e1cbe0d0ef8ee56fc81d104ccf708e7" }
+source = { git = "https://github.com/QI2lab/localize-psf.git?branch=main#b771a3ffcfe583750544d8c372bdc812f81dde7d" }
 dependencies = [
     { name = "joblib" },
     { name = "matplotlib" },
@@ -1084,7 +1084,8 @@ example = [
 ]
 gpu = [
     { name = "cupy-cuda12x", extra = ["ctk"] },
-    { name = "pygpufit" },
+    { name = "pygpufit", version = "1.2.0", source = { url = "https://github.com/QI2lab/localize-psf/releases/download/gpufit-wheels-v1.2.0-r1/pygpufit-1.2.0-py3-none-linux_x86_64.whl" }, marker = "sys_platform != 'win32'" },
+    { name = "pygpufit", version = "1.2.0", source = { url = "https://github.com/QI2lab/localize-psf/releases/download/gpufit-wheels-v1.2.0-r1/pygpufit-1.2.0-py3-none-win_amd64.whl" }, marker = "sys_platform == 'win32'" },
 ]
 
 [[package]]
@@ -1429,7 +1430,7 @@ wheels = [
 
 [[package]]
 name = "napari-localize-psf"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "localize-psf", extra = ["example", "gpu"] },
@@ -1466,7 +1467,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "localize-psf", extras = ["gpu", "example"], git = "https://github.com/QI2lab/localize-psf.git?branch=fix%2Ffootprint-aware-rois" },
+    { name = "localize-psf", extras = ["gpu", "example"], git = "https://github.com/QI2lab/localize-psf.git?branch=main" },
     { name = "matplotlib", specifier = ">=3.9" },
     { name = "numpy", specifier = ">=2" },
     { name = "ome-zarr", specifier = ">=0.20.1" },
@@ -1481,7 +1482,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [{ name = "ruff", specifier = ">=0.16" }]
 test = [
-    { name = "localize-psf", git = "https://github.com/QI2lab/localize-psf.git?branch=fix%2Ffootprint-aware-rois" },
+    { name = "localize-psf", git = "https://github.com/QI2lab/localize-psf.git?branch=main" },
     { name = "napari", extras = ["pyqt6"], specifier = ">=0.10.0" },
     { name = "napari-ome-zarr", specifier = ">=0.11.0" },
     { name = "napari-tiff", specifier = ">=0.1.6" },
@@ -2305,10 +2306,40 @@ wheels = [
 [[package]]
 name = "pygpufit"
 version = "1.2.0"
-source = { git = "https://github.com/QI2lab/Gpufit.git?rev=opm-ptv#407d9b0552134b618e87fb17668c8a803680d621" }
+source = { url = "https://github.com/QI2lab/localize-psf/releases/download/gpufit-wheels-v1.2.0-r1/pygpufit-1.2.0-py3-none-linux_x86_64.whl" }
+resolution-markers = [
+    "python_full_version >= '3.14' and platform_machine == 'x86_64' and sys_platform == 'linux'",
+    "python_full_version == '3.13.*' and platform_machine == 'x86_64' and sys_platform == 'linux'",
+    "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform == 'linux'",
+]
 dependencies = [
     { name = "numpy" },
 ]
+wheels = [
+    { url = "https://github.com/QI2lab/localize-psf/releases/download/gpufit-wheels-v1.2.0-r1/pygpufit-1.2.0-py3-none-linux_x86_64.whl", hash = "sha256:b1f8b464f2ddc8fcd3a728544612e026deabdebb273c41ee2ca23f00f29f69b4" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "numpy", specifier = ">=2.0" }]
+
+[[package]]
+name = "pygpufit"
+version = "1.2.0"
+source = { url = "https://github.com/QI2lab/localize-psf/releases/download/gpufit-wheels-v1.2.0-r1/pygpufit-1.2.0-py3-none-win_amd64.whl" }
+resolution-markers = [
+    "python_full_version >= '3.14' and platform_machine == 'AMD64' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and platform_machine == 'AMD64' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and platform_machine == 'AMD64' and sys_platform == 'win32'",
+]
+dependencies = [
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://github.com/QI2lab/localize-psf/releases/download/gpufit-wheels-v1.2.0-r1/pygpufit-1.2.0-py3-none-win_amd64.whl", hash = "sha256:45ceff372f504a023bf730dad06efc83c4981eaa545afd2c8a0d3649e294c706" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "numpy", specifier = ">=2.0" }]
 
 [[package]]
 name = "pyopengl"

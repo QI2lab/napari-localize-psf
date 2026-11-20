@@ -192,7 +192,7 @@ def test_store_root_opens_highest_resolution_without_xml(
     batch_input = path if positions == 1 else path / str(positions - 1)
     if sys.platform == "win32":
         quoted_input = "'" + str(batch_input).replace("'", "''") + "'"
-        assert f"{quoted_input} --metadata " in command
+        assert f"{quoted_input} '--metadata' " in command
     else:
         assert shlex.split(command)[3] == str(batch_input)
     assert command == QApplication.clipboard().text()

@@ -37,6 +37,56 @@ def test_real_linking_preserves_units_gaps_channels_and_candidate_ids(
     assert not path.with_name("tracks.parquet").exists()
 
 
+@pytest.mark.parametrize("dimensions", ["2d", "3d"])
+def test_adaptive_parameters_link_a_crowded_localization_table(localizations, dimensions):
+    from trackpy import SubnetOversizeException
+
+    path, _ = localizations
+    metadata = pq.read_schema(path).metadata
+    # Simulated contracting-grid coordinates from Trackpy's adaptive-search
+    # tutorial challenge the real linker through the plugin's Parquet adapter.
+    y, x = np.mgrid[-10:11, -10:11].reshape(2, -1)
+    count = len(x)
+    parameters = np.tile([100.0, 0, 0, 0, 0.15, 0.3, 5], (2 * count, 1))
+    parameters[:, 1] = np.concatenate((x, 0.95 * x))
+    parameters[:, 2] = np.concatenate((y, 0.95 * y))
+    table = pa.table(
+        {
+            "fit_params": parameters.tolist(),
+            "success": np.ones(2 * count, dtype=bool),
+            "candidate_ids": np.arange(2 * count),
+            "candidate_timepoints": np.repeat([0, 1], count),
+            "candidate_channels": np.zeros(2 * count, dtype=int),
+        }
+    ).replace_schema_metadata(metadata)
+    pq.write_table(table, path)
+    ranges = (0.2 if dimensions == "2d" else 1.9, 0.95, 0.95)
+    with pytest.raises(SubnetOversizeException):
+        link_localizations(path, dimensions=dimensions, search_range_um=ranges, min_length=2)
+    fine, settings = link_localizations(
+        path,
+        dimensions=dimensions,
+        search_range_um=ranges,
+        min_length=2,
+        adaptive_stop_um=0.56,
+        adaptive_step=0.99,
+    )
+    assert len(fine) == 2 * count
+    assert fine.groupby("particle")["frame"].nunique().eq(2).all()
+    assert settings["tracking"]["adaptive_stop_um"] == 0.56
+    assert settings["tracking"]["adaptive_step"] == 0.99
+    coarse, _ = link_localizations(
+        path,
+        dimensions=dimensions,
+        search_range_um=ranges,
+        min_length=2,
+        adaptive_stop_um=0.56,
+        adaptive_step=0.5,
+    )
+    assert len(coarse) < len(fine)
+    assert not path.with_name("tracking.json").exists()
+
+
 @pytest.mark.parametrize("frame_interval_s", [None, 0.02])
 def test_frame_selection_minimum_length_empty_and_saved_results(localizations, frame_interval_s):
     path, config = localizations
@@ -276,6 +326,14 @@ def test_cancellation_and_invalid_settings_do_not_write_results(localizations):
         {"memory": -1},
         {"min_length": 0},
         {"adaptive_stop_um": 0.4},
+        {"adaptive_stop_um": 0.3},
+        {"adaptive_stop_um": 0},
+        {"adaptive_stop_um": float("nan")},
+        {"adaptive_step": 0},
+        {"adaptive_step": 1},
+        {"adaptive_step": -0.1},
+        {"adaptive_step": float("nan")},
+        {"adaptive_step": float("inf")},
         {"channel": -1},
         {"frame_interval_s": 0},
         {"frame_interval_s": float("nan")},

@@ -36,6 +36,13 @@ def test_widget_tunes_executes_saves_and_reloads_tracks(viewer, qtbot, localizat
     titles = [widget.tabs.tabText(i) for i in range(widget.tabs.count())]
     assert titles.index("Tracking") == titles.index("Batch results") + 1
     assert [widget.tracking_tabs.tabText(i) for i in range(2)] == ["Tune", "Run / results"]
+    assert widget.tracking_adaptive_stop.value() == 0
+    assert widget.tracking_adaptive_step.value() == 0.95
+    assert not widget.tracking_adaptive_step.isEnabled()
+    assert 0 < widget.tracking_adaptive_step.minimum() < widget.tracking_adaptive_step.maximum() < 1
+    widget.tracking_adaptive_stop.setValue(0.1)
+    assert widget.tracking_adaptive_step.isEnabled()
+    widget.tracking_adaptive_step.setValue(0.99)
     widget.tracking_path.setText(str(path))
     assert widget.results_path.text() == str(path)
     widget.tracking_all_channels.setChecked(True)
@@ -51,6 +58,7 @@ def test_widget_tunes_executes_saves_and_reloads_tracks(viewer, qtbot, localizat
     assert "Tracking preview: counts" in viewer.layers, widget.status.text()
     preview = viewer.layers["Tracking preview: counts"]
     assert isinstance(preview, Tracks)
+    assert preview.metadata["configuration"]["tracking"]["adaptive_step"] == 0.99
     assert set(preview.features["frame"]) == {1, 2, 3}
     assert not path.with_name("tracks.parquet").exists()
     assert not path.with_name("msd_individual.parquet").exists()
@@ -71,6 +79,8 @@ def test_widget_tunes_executes_saves_and_reloads_tracks(viewer, qtbot, localizat
     saved = json.loads(path.with_name("tracking.json").read_text())
     assert saved["tracking"]["first_frame"] is None and saved["tracking"]["last_frame"] is None
     assert saved["tracking"]["frame_interval_s"] == 0.015
+    assert saved["tracking"]["adaptive_stop_um"] == 0.1
+    assert saved["tracking"]["adaptive_step"] == 0.99
     for name in saved["tracking"]["analysis"]["files"]:
         assert path.with_name(name).is_file()
     assert path.with_name(saved["tracking"]["analysis"]["report_file"]).is_file()
@@ -78,11 +88,23 @@ def test_widget_tunes_executes_saves_and_reloads_tracks(viewer, qtbot, localizat
     viewer.layers.remove(overlay)
     widget.tracking_memory.setValue(0)
     widget.tracking_frame_interval.setValue(0.5)
+    widget.tracking_adaptive_stop.setValue(0)
+    widget.tracking_adaptive_step.setValue(0.8)
+    assert not widget.tracking_adaptive_step.isEnabled()
     widget.tracking_load_button.click()
     qtbot.waitUntil(lambda: not widget._busy, timeout=10000)
     np.testing.assert_array_equal(viewer.layers["Tracks: counts"].data, original)
     assert widget.tracking_memory.value() == 1
     assert widget.tracking_frame_interval.value() == 0.015
+    assert widget.tracking_adaptive_stop.value() == 0.1
+    assert widget.tracking_adaptive_step.value() == 0.99
+    assert widget.tracking_adaptive_step.isEnabled()
+    # Older tracking.json files did not record Trackpy's implicit step factor.
+    del saved["tracking"]["adaptive_step"]
+    path.with_name("tracking.json").write_text(json.dumps(saved), encoding="utf-8")
+    widget.tracking_load_button.click()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=10000)
+    assert widget.tracking_adaptive_step.value() == 0.95
     before = path.with_name("tracks.parquet").read_bytes()
     widget.tracking_min_length.setValue(100)
     widget.tracking_preview_button.click()

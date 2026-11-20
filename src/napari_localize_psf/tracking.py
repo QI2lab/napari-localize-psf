@@ -360,6 +360,7 @@ def link_localizations(
     channel: int | None = None,
     converged_only: bool = True,
     adaptive_stop_um: float | None = None,
+    adaptive_step: float = 0.95,
     input_uri: str = "",
     save: bool = False,
     frame_interval_s: float | None = None,
@@ -382,6 +383,11 @@ def link_localizations(
     individual/ensemble MSD Parquet analyses and a PDF plot report; tuning runs
     leave ``save=False``.
     ``frame_interval_s`` calibrates the analysis lag times; None keeps frame lags.
+    ``adaptive_stop_um`` enables Trackpy's local retries for oversized subnets;
+    None disables them. Each retry multiplies every search radius by the unitless
+    ``adaptive_step`` (strictly between zero and one). With unequal radii,
+    Trackpy rescales the stop so the smallest selected radius reaches this µm
+    threshold first. No subnet-size limits or linking algorithms are overridden.
     Return linked rows plus saved localization metadata and tracking settings.
     """
     import pyarrow.parquet as pq
@@ -408,6 +414,10 @@ def link_localizations(
         not np.isfinite(adaptive_stop_um) or not 0 < adaptive_stop_um < min(selected_distances)
     ):
         raise ValueError("Adaptive stop must be positive and smaller than every displacement limit")
+    if not np.isfinite(adaptive_step) or not 0 < adaptive_step < 1:
+        raise ValueError(
+            "Adaptive step must be a finite factor greater than zero and less than one"
+        )
     if cancelled is not None and cancelled.is_set():
         raise CancelledError("Tracking cancelled")
     source = Path(path).expanduser()
@@ -442,7 +452,7 @@ def link_localizations(
     ]
     # Covariance matrices are unnecessary for linking. Keep the validity flag,
     # identity and physical/pixel positions without reading those large columns.
-    columns = required | {"filter_pass", "covariance_valid", "candidate_ids"}
+    columns = required | {"filter_pass", "covariance_valid", "candidate_ids", "roi_truncated"}
     table = pq.read_table(
         source, columns=[name for name in schema.names if name in columns], filters=filters or None
     )
@@ -468,6 +478,7 @@ def link_localizations(
                 pos_columns=position_columns,
                 memory=memory,
                 adaptive_stop=adaptive_stop_um,
+                adaptive_step=adaptive_step,
             ),
             start=first,
         ):
@@ -501,6 +512,7 @@ def link_localizations(
         channel=channel,
         converged_only=converged_only,
         adaptive_stop_um=adaptive_stop_um,
+        adaptive_step=adaptive_step,
         skipped_nonfinite=skipped,
         trackpy_version=tp.__version__,
         frame_interval_s=frame_interval_s,
