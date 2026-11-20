@@ -25,9 +25,12 @@ Open **Plugins → QI2lab Localization** in napari.
 
 Use **Tracking** to preview trajectories or track the full dataset. Saved results
 include tracks, step-size and MSD analyses as Parquet files, and a PDF plot report.
+Tune [adaptive search] with its stop distance and step factor; set the stop to
+**Off** to disable it.
 
 Optionally use **PSF / field** after a 3D fit preview to average accepted PSFs and
 plot focus tilt and field curvature.
 
 [napari]: https://napari.org/
 [localize-psf]: https://github.com/QI2lab/localize-psf
+[adaptive search]: https://soft-matter.github.io/trackpy/dev/tutorial/adaptive-search.html

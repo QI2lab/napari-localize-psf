@@ -543,8 +543,12 @@ class LocalizationWidget(QWidget):
             box.setDecimals(6)
             box.setRange(0.000001, 1_000_000)
             box.setValue(1.0)
+            box.setToolTip(
+                "Trackpy search_range: maximum linking distance along this axis in µm. "
+                "Adaptive search reduces this range locally when a subnet is too large."
+            )
             self.tracking_ranges[axis] = box
-            form.addRow(f"Max displacement {axis.upper()} (µm/frame)", box)
+            form.addRow(f"Maximum search range {axis.upper()} (µm)", box)
         self.tracking_dimensions.currentTextChanged.connect(
             lambda value: self.tracking_ranges["z"].setEnabled(value == "3d")
         )
@@ -560,7 +564,28 @@ class LocalizationWidget(QWidget):
         self.tracking_adaptive_stop.setDecimals(6)
         self.tracking_adaptive_stop.setRange(0, 1_000_000)
         self.tracking_adaptive_stop.setSpecialValueText("Off")
+        self.tracking_adaptive_stop.setToolTip(
+            "Trackpy adaptive_stop: retry oversized subnets using smaller search ranges. "
+            "Zero disables adaptive search. Otherwise use a positive distance below every "
+            "selected search range. With unequal ranges, the smallest axis reaches this "
+            "stop distance first; unresolved subnets raise a linking error."
+        )
         form.addRow("Adaptive stop (µm)", self.tracking_adaptive_stop)
+        self.tracking_adaptive_step = QDoubleSpinBox()
+        self.tracking_adaptive_step.setDecimals(6)
+        self.tracking_adaptive_step.setRange(0.000001, 0.999999)
+        self.tracking_adaptive_step.setSingleStep(0.01)
+        self.tracking_adaptive_step.setValue(0.95)
+        self.tracking_adaptive_step.setEnabled(False)
+        self.tracking_adaptive_step.setToolTip(
+            "Trackpy adaptive_step: multiply the local search ranges by this unitless "
+            "factor on each retry. 0.95 reduces them by 5%; 0.99 reduces them by 1%. "
+            "Must be greater than zero and less than one. Default: 0.95."
+        )
+        self.tracking_adaptive_stop.valueChanged.connect(
+            lambda value: self.tracking_adaptive_step.setEnabled(value > 0)
+        )
+        form.addRow("Adaptive step factor", self.tracking_adaptive_step)
         self.tracking_converged = QCheckBox("Use converged localizations only")
         self.tracking_converged.setChecked(True)
         form.addRow(self.tracking_converged)
@@ -1275,6 +1300,7 @@ class LocalizationWidget(QWidget):
                 else self.tracking_channel.value(),
                 converged_only=self.tracking_converged.isChecked(),
                 adaptive_stop_um=self.tracking_adaptive_stop.value() or None,
+                adaptive_step=self.tracking_adaptive_step.value(),
                 input_uri=source_uri,
                 save=scope == "full",
                 frame_interval_s=self.tracking_frame_interval.value() or None,
@@ -1467,6 +1493,7 @@ class LocalizationWidget(QWidget):
                 if "frame_interval_s" in settings:
                     self.tracking_frame_interval.setValue(settings["frame_interval_s"] or 0)
                 self.tracking_adaptive_stop.setValue(settings["adaptive_stop_um"] or 0)
+                self.tracking_adaptive_step.setValue(settings.get("adaptive_step", 0.95))
                 self.tracking_all_channels.setChecked(settings["channel"] is None)
                 if settings["channel"] is not None:
                     self.tracking_channel.setValue(settings["channel"])
