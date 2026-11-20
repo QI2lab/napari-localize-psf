@@ -442,7 +442,7 @@ def link_localizations(
     ]
     # Covariance matrices are unnecessary for linking. Keep the validity flag,
     # identity and physical/pixel positions without reading those large columns.
-    columns = required | {"filter_pass", "covariance_valid", "candidate_ids"}
+    columns = required | {"filter_pass", "covariance_valid", "candidate_ids", "roi_truncated"}
     table = pq.read_table(
         source, columns=[name for name in schema.names if name in columns], filters=filters or None
     )

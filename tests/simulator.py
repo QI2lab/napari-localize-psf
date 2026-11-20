@@ -1,7 +1,11 @@
 """Synthetic inputs built with upstream PSF models; never a replacement fitter."""
 
 import numpy as np
-from localize_psf.fit_psf import gaussian2d_psf_model, gaussian3d_psf_model
+from localize_psf.fit_psf import (
+    gaussian2d_psf_model,
+    gaussian3d_asymmetric_rotated_pixelated,
+    gaussian3d_psf_model,
+)
 from localize_psf.localize import get_coords
 
 
@@ -20,7 +24,7 @@ def gaussian_image(plane: bool = False) -> tuple[np.ndarray, np.ndarray, tuple, 
     return np.asarray(image, dtype=np.float32), truth, spacing, origin
 
 
-def bead_image() -> tuple[np.ndarray, np.ndarray, tuple, tuple]:
+def bead_image(tilt_yz_rad: float | None = None) -> tuple[np.ndarray, np.ndarray, tuple, tuple]:
     """Return five separated beads in original ZYX counts with physical Gaussian parameters."""
     shape, spacing, origin = (25, 71, 71), (0.2, 0.1, 0.1), (-2.0, 3.0, -4.0)
     pixels = np.array(
@@ -34,5 +38,19 @@ def bead_image() -> tuple[np.ndarray, np.ndarray, tuple, tuple]:
         ]
     )
     coords, model = get_coords(shape, spacing, origin=origin), gaussian3d_psf_model()
-    image = 5 + sum(model.model(coords, parameters) - parameters[6] for parameters in parameters)
+    if tilt_yz_rad is not None:
+        parameters = np.column_stack(
+            (
+                parameters[:, :4],
+                parameters[:, 4],
+                parameters[:, 4],
+                parameters[:, 5:],
+                np.full(len(parameters), np.pi / 2),
+                np.full(len(parameters), tilt_yz_rad),
+                np.full(len(parameters), -np.pi / 2),
+            )
+        )
+        model = gaussian3d_asymmetric_rotated_pixelated()
+    background = 6 if tilt_yz_rad is None else 7
+    image = 5 + sum(model.model(coords, p) - p[background] for p in parameters)
     return np.asarray(image, dtype=np.float32), parameters, spacing, origin

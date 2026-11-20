@@ -15,6 +15,55 @@ from napari_localize_psf.processing import fit_filter_mask, fit_spots, optical_p
 pytestmark = [pytest.mark.integration, pytest.mark.gpu]
 
 
+def test_tilt_calibration_is_automatic_and_exported_with_native_fit_features(viewer, qtbot):
+    from napari_localize_psf.widget import LocalizationWidget
+
+    angle = -0.18
+    image, _, spacing, origin = bead_image(tilt_yz_rad=angle)
+    image = np.random.default_rng(71).poisson(image * 10).astype(np.float32)
+    source = viewer.add_image(image, scale=spacing, translate=origin, units="um")
+    widget = LocalizationWidget(viewer)
+    qtbot.addWidget(widget)
+    for axis, size in zip("zyx", (2.3, 1.5, 1.5), strict=True):
+        widget.fit_roi[axis].setValue(size)
+    widget.solver["max_number_iterations"].setValue(500)
+    widget.covariance.setChecked(True)
+    widget.run_detection()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._detection is not None, widget.status.text()
+    priors = widget._detection
+    widget.tilt.setChecked(True)
+    assert widget._detection is priors
+    widget.run_fitting()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._fit_layer is not None, widget.status.text()
+    fitted = widget._fit_layer
+    names = fitted.metadata["parameter_names"]
+    assert len(names) == 11 and "theta" in names
+    calibrated = widget.current_config().psf_tilt_yz_rad
+    assert calibrated == pytest.approx(angle, abs=0.06)
+    np.testing.assert_allclose(fitted.features["theta"], calibrated, atol=1e-6)
+    assert "roi_truncated" in fitted.features
+    assert "Calibrated" in widget.tilt_status.text()
+    widget.fit_covariance.setCurrentText("Pass")
+    expected = fit_filter_mask(
+        fitted.features[list(names)].to_numpy(),
+        fitted.features.success.to_numpy(),
+        fitted.features.covariance_valid.to_numpy(),
+        widget.current_config().fit_filters,
+        collapse_distance_zyx_um=fitted.metadata["collapse_distance_zyx_um"],
+    )
+    np.testing.assert_array_equal(fitted.shown, expected)
+    assert expected.any()
+    widget.run_psf_analysis()
+    qtbot.waitUntil(lambda: not widget._busy, timeout=60000)
+    assert widget._psf_result is not None, widget.psf_status.text()
+    widget._show_json()
+    assert '"psf_model": "tilted_gaussian"' in widget.config_view.toPlainText()
+    source.translate = (0, 0, 0)
+    assert widget.current_config().psf_tilt_yz_rad is None
+
+
 def test_optional_psf_analysis_uses_current_accepted_gpu_preview(viewer, qtbot):
     from napari_localize_psf.widget import LocalizationWidget
 

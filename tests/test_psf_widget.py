@@ -16,6 +16,26 @@ from napari_localize_psf.widget import LocalizationWidget
 pytestmark = pytest.mark.integration
 
 
+def test_tilt_controls_preserve_calibration_in_json_and_reset_for_source_changes(viewer, qtbot):
+    source = viewer.add_image(np.ones((9, 21, 23)), units="um")
+    widget = LocalizationWidget(viewer)
+    qtbot.addWidget(widget)
+    assert not widget.tilt.isChecked()
+    widget.tilt.setChecked(True)
+    assert widget.current_config().psf_model == "tilted_gaussian"
+    assert widget.current_config().psf_tilt_yz_rad is None
+    config = widget.current_config().model_copy(update={"psf_tilt_yz_rad": -0.2})
+    widget.apply_config(config)
+    assert widget.current_config().psf_tilt_yz_rad == -0.2
+    widget._show_json()
+    assert '"psf_tilt_yz_rad": -0.2' in widget.config_view.toPlainText()
+    source.translate = (1, 2, 3)
+    assert widget.current_config().psf_tilt_yz_rad is None
+    widget.model.setCurrentText("2d")
+    assert not widget.tilt.isEnabled() and not widget.tilt.isChecked()
+    assert widget.current_config().psf_model == "gaussian"
+
+
 def test_psf_tab_is_optional_and_requires_completed_3d_fits(viewer, qtbot):
     viewer.add_image(np.ones((5, 11, 13)), units="um")
     widget = LocalizationWidget(viewer)

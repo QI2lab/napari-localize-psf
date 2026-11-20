@@ -18,6 +18,7 @@ Open **Plugins → QI2lab Localization** in napari.
    resolution is selected automatically.
 2. Preview U-FISH detections and adjust the model, threshold, and edge filtering.
 3. Preview 2D or 3D Gaussian fits and tune their bounds and acceptance filters.
+   Optional tilted 3D fitting calibrates a shared Y–Z angle automatically.
 4. Save the JSON settings and select **Copy batch command** to run localization
    from your terminal.
 5. Load completed localizations in **Batch results** to overlay them on the image.

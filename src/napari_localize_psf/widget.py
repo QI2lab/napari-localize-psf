@@ -92,6 +92,8 @@ class LocalizationWidget(QWidget):
         self._detection: tuple[np.ndarray, np.ndarray] | None = None
         self._fit_layer: Points | None = None
         self._psf_result: PSFAnalysis | None = None
+        self._tilt_yz_rad: float | None = None
+        self.tilt_status = QLabel("Tilt calibration runs during the fit preview.", self)
         self.fit_filter_status = QLabel("Run a GPU fit preview to filter its results.", self)
         self.psf_button = QPushButton("Average PSF and fit field curvature", self)
         self.psf_status = QLabel("Run a 3D fit preview to enable PSF analysis.", self)
@@ -310,6 +312,12 @@ class LocalizationWidget(QWidget):
 
         form = QFormLayout(fit_page)
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self.tilt = QCheckBox("Tilted Gaussian with automatic Y–Z calibration")
+        self.tilt.setToolTip("Calibrate from isolated 3D spots and save the angle for batch reuse.")
+        self.tilt.toggled.connect(self._invalidate_tilt)
+        form.addRow(self.tilt)
+        self.tilt_status.setWordWrap(True)
+        form.addRow(self.tilt_status)
         self.fit_roi: dict[str, QDoubleSpinBox] = {}
         for axis, value in zip("zyx", defaults.fit_roi_size_um, strict=True):
             box = QDoubleSpinBox()
@@ -338,7 +346,7 @@ class LocalizationWidget(QWidget):
             self.parameters.setCellWidget(row_index, 3, QCheckBox())
         form.addRow(self.parameters)
         note = QLabel(
-            "Positions and widths: µm. Center bounds and initial values are offsets from each U-FISH prior, limited to its ROI. Blank values use upstream estimates / ROI limits. 2D fits one XY plane; cz and sz are fixed."
+            "Positions and widths: µm. Center bounds and initial values are offsets from each U-FISH prior, limited to its ROI. Blank values use upstream estimates / ROI limits. For tilted fits, sxy bounds apply to both principal lateral widths. 2D fixes cz and sz."
         )
         note.setWordWrap(True)
         form.addRow(note)
@@ -789,7 +797,18 @@ class LocalizationWidget(QWidget):
             self.parameters.setRowHidden(row, plane)
         self.blend.setEnabled(not plane)
         self.fit_roi["z"].setEnabled(not plane)
+        self.tilt.setEnabled(not plane)
+        if plane:
+            self.tilt.setChecked(False)
         self._invalidate_data()
+
+    def _invalidate_tilt(self, *args: object) -> None:
+        """Recalibrate after changing the model while retaining valid U-FISH priors."""
+        self._tilt_yz_rad = None
+        self._fit_layer = None
+        self._revision += 1
+        self.tilt_status.setText("Tilt calibration runs during the fit preview.")
+        self._clear_psf_analysis()
 
     def _invalidate_data(self, *args: object) -> None:
         """Drop data-derived state while an in-flight result is marked stale."""
@@ -806,6 +825,8 @@ class LocalizationWidget(QWidget):
         self._revision += 1
         self._detection = None
         self._fit_layer = None
+        self._tilt_yz_rad = None
+        self.tilt_status.setText("Tilt calibration runs during the fit preview.")
         self.fit_filter_status.setText("Run a GPU fit preview to filter its results.")
         self._clear_psf_analysis()
 
@@ -851,7 +872,9 @@ class LocalizationWidget(QWidget):
                 )
                 return
             mask = fit_filter_mask(
-                features[list(self.parameter_names)].to_numpy(),
+                features[
+                    list(layer.metadata.get("parameter_names", self.parameter_names))
+                ].to_numpy(),
                 features["success"].to_numpy(),
                 features["covariance_valid"].to_numpy() if "covariance_valid" in features else None,
                 filters,
@@ -920,7 +943,9 @@ class LocalizationWidget(QWidget):
         config = LocalizationConfig.model_validate(layer.metadata["configuration"])
         features = layer.features
         fits = {
-            "fit_params": features[list(self.parameter_names)].to_numpy(copy=True),
+            "fit_params": features[
+                list(layer.metadata.get("parameter_names", self.parameter_names))
+            ].to_numpy(copy=True),
             "success": features["success"].to_numpy(copy=True),
             "filter_pass": features["filter_pass"].to_numpy(copy=True),
         }
@@ -1027,6 +1052,8 @@ class LocalizationWidget(QWidget):
             ),
             source_layer=self._layer.name,
             fit_model=self.model.currentText(),
+            psf_model="tilted_gaussian" if self.tilt.isChecked() else "gaussian",
+            psf_tilt_yz_rad=self._tilt_yz_rad if self.tilt.isChecked() else None,
             blend_3d=self.blend.isChecked(),
             ufish_median_filter=self.median_filter.isChecked(),
             intensity_threshold=self.threshold.value(),
@@ -1314,7 +1341,8 @@ class LocalizationWidget(QWidget):
                 self.progress.emit,
                 origin_zyx_um=preview[1],
             )
-            return preview, result, config
+            resolved = config.model_copy(update={"psf_tilt_yz_rad": result.get("psf_tilt_yz_rad")})
+            return preview, result, resolved
 
         if not self._busy:
             self._clear_psf_analysis()
@@ -1487,13 +1515,21 @@ class LocalizationWidget(QWidget):
             parameters = result["fit_params"]
             _, origin, source_config = preview
             points = (parameters[:, (3, 2, 1)] - origin) / source_config.voxel_size_zyx_um
-            features = pd.DataFrame(parameters, columns=self.parameter_names)
+            names = tuple(result.get("parameter_names", self.parameter_names))
+            features = pd.DataFrame(parameters, columns=names)
             features["success"] = result["success"]
             features["iterations"] = result["niters"]
             features["objective"] = result["chi_sqrs"]
             features["active_bound"] = np.any(result["active_bounds"], axis=1)
             if "covariance_valid" in result:
                 features["covariance_valid"] = result["covariance_valid"]
+            if "roi_truncated" in result:
+                features["roi_truncated"] = result["roi_truncated"]
+            self._tilt_yz_rad = config.psf_tilt_yz_rad
+            if self._tilt_yz_rad is not None:
+                self.tilt_status.setText(
+                    f"Calibrated Y–Z tilt: {np.degrees(self._tilt_yz_rad):.2f}°. Included in JSON export."
+                )
             self._fit_layer = self._replace_points(
                 "Gaussian fits",
                 layer_coordinates(points, source_config),
@@ -1504,6 +1540,7 @@ class LocalizationWidget(QWidget):
             self._fit_layer.metadata = {
                 **self._fit_layer.metadata,
                 "collapse_distance_zyx_um": result.get("collapse_distance_zyx_um"),
+                "parameter_names": names,
             }
             self._apply_fit_filters()
             self.status.setText(
@@ -1672,6 +1709,8 @@ class LocalizationWidget(QWidget):
             if config.input_uri != source:
                 raise ValueError("Open the configuration's input image before loading its settings")
         self.model.setCurrentText(config.fit_model)
+        with QSignalBlocker(self.tilt):
+            self.tilt.setChecked(config.psf_model == "tilted_gaussian")
         self.axes.setText(config.preview.axes)
         self.path.setText(config.input_uri)
         self.blend.setChecked(config.blend_3d)
@@ -1733,6 +1772,11 @@ class LocalizationWidget(QWidget):
             self.fit_covariance.setCurrentText(config.fit_filters.covariance.capitalize())
         self.batch_all.setChecked(config.batch_axes)
         self._invalidate_data()
+        self._tilt_yz_rad = config.psf_tilt_yz_rad
+        if self._tilt_yz_rad is not None:
+            self.tilt_status.setText(
+                f"Calibrated Y–Z tilt: {np.degrees(self._tilt_yz_rad):.2f}°. Included in JSON export."
+            )
         self.config_view.setPlainText(config.model_dump_json(indent=2))
 
     def _copy_batch_command(self) -> None:
